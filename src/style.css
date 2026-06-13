@@ -1,0 +1,32 @@
+*{
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+#app{
+  bottom: 0;
+}
+
+/* scrollbar */
+::-webkit-scrollbar {
+  width: 8px; /* 不要太寬，才不會破壞白色的乾淨感 */
+}
+
+::-webkit-scrollbar-track {
+  background: transparent; /* 軌道透明，讓白色背景穿透 */
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.45); /* 極淺的半透明黑 */
+  border-radius: 10px;
+  /* 關鍵：利用 border 創造縮排感，看起來更細緻 */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.6); /* 滑鼠懸停時稍微加深 */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
