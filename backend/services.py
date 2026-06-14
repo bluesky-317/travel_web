@@ -25,9 +25,9 @@ from utils import fmt_time, json_text, norm_city, split_location
 
 
 ATTRACTION_REQUIRED_COLUMNS = (
-    "AttractionId", "Name", "CategoryId", "CityId", "Address", "Lat", "Lon",
-    "ImageUrl", "Description", "OpeningHours", "TicketInfo", "WebsiteUrl",
-    "Rating", "Phone", "SourceUpdatedAt", "IsDeleted", "CreatedAt", "UpdatedAt",
+    "attraction_id", "name", "category_id", "city_id", "address", "lat", "lon",
+    "image_url", "description", "opening_hours", "ticket_info", "website_url",
+    "rating", "phone", "source_updated_at", "is_deleted", "created_at", "updated_at",
 )
 
 
@@ -40,8 +40,9 @@ def _iso(value) -> str | None:
 
 
 class SchemaService:
-    REQUIRED_TABLES = ("Users", "Categories", "Cities", "Attractions", "Itineraries", "ItineraryItems")
+    REQUIRED_TABLES = ("User", "Category", "City", "Attraction", "Itinerary", "ItineraryItem")
     REMOVED_TABLES = (
+        # Historical tables removed in earlier refactors.
         "user_roles",
         "towns",
         "tags",
@@ -49,6 +50,13 @@ class SchemaService:
         "attraction_descriptions",
         "user_favorites",
         "user_visited",
+        # Legacy plural PascalCase tables superseded by singular names.
+        "users",
+        "categories",
+        "cities",
+        "attractions",
+        "itineraries",
+        "itineraryitems",
     )
 
     def ensure(self) -> None:
@@ -56,10 +64,10 @@ class SchemaService:
         has_required = all(t.lower() in tables for t in self.REQUIRED_TABLES)
         schema_ok = (
             has_required
-            and "Role" in db.get_columns("Users")
-            and db.get_columns("Attractions") == set(ATTRACTION_REQUIRED_COLUMNS)
-            and "DayIndex" in db.get_columns("ItineraryItems")
-            and "IsAi" not in db.get_columns("Itineraries")
+            and "role" in db.get_columns("User")
+            and db.get_columns("Attraction") == set(ATTRACTION_REQUIRED_COLUMNS)
+            and "day_index" in db.get_columns("ItineraryItem")
+            and "is_ai" not in db.get_columns("Itinerary")
             and not any(t.lower() in tables for t in self.REMOVED_TABLES)
         )
         if schema_ok:
@@ -412,7 +420,7 @@ class ItineraryService:
     def _load_items_for_itinerary(self, session: Session, itin_id: str, num_days: int) -> list:
         stmt = (
             select(
-                ItineraryItem.item_id,
+                ItineraryItem.itinerary_item_id,
                 ItineraryItem.attraction_id,
                 ItineraryItem.day_index,
                 ItineraryItem.start_time,
@@ -439,7 +447,7 @@ class ItineraryService:
             if not (0 <= day_idx < len(days)):
                 day_idx = 0
             days[day_idx]["items"].append({
-                "uid": row.item_id,
+                "uid": row.itinerary_item_id,
                 "attractionId": row.attraction_id,
                 "name": row.name or "",
                 "location": row.address or "",
@@ -521,7 +529,7 @@ class ItineraryService:
                 return {"id": None, "items": []}
             items = session.execute(
                 select(
-                    ItineraryItem.item_id,
+                    ItineraryItem.itinerary_item_id,
                     ItineraryItem.attraction_id,
                     ItineraryItem.day_index,
                     ItineraryItem.start_time,
@@ -535,7 +543,7 @@ class ItineraryService:
             return {
                 "id": itin.itinerary_id,
                 "items": [{
-                    "item_id": row.item_id,
+                    "itinerary_item_id": row.itinerary_item_id,
                     "attraction_id": row.attraction_id,
                     "day_index": row.day_index,
                     "start_time": _iso(row.start_time),
@@ -605,7 +613,7 @@ class ItineraryService:
                 delete(ItineraryItem).where(ItineraryItem.itinerary_id == itin_id)
             )
             payload = [{
-                "item_id": item.uid,
+                "itinerary_item_id": item.uid,
                 "itinerary_id": itin_id,
                 "attraction_id": item.attractionId,
                 "day_index": item.dayIndex,
@@ -627,7 +635,7 @@ class ItineraryService:
                 )
             ).scalar_one()
             session.add(ItineraryItem(
-                item_id=body.uid,
+                itinerary_item_id=body.uid,
                 itinerary_id=itin_id,
                 attraction_id=body.attractionId,
                 day_index=body.dayIndex,
@@ -642,7 +650,7 @@ class ItineraryService:
             self._ensure_owned(session, itin_id, user_id)
             session.execute(
                 delete(ItineraryItem).where(
-                    ItineraryItem.item_id == item_id,
+                    ItineraryItem.itinerary_item_id == item_id,
                     ItineraryItem.itinerary_id == itin_id,
                 )
             )
@@ -666,7 +674,7 @@ class ItineraryService:
             session.execute(
                 update(ItineraryItem)
                 .where(
-                    ItineraryItem.item_id == item_id,
+                    ItineraryItem.itinerary_item_id == item_id,
                     ItineraryItem.itinerary_id == itin_id,
                 )
                 .values(**values)
