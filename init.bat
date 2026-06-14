@@ -2,7 +2,7 @@
 chcp 65001 >nul
 
 :: var
-set db_name=mariadb-12.3.2-winx64
+set db_folder_name=mariadb-12.3.2-winx64
 set passwd=
 set venv_name=.venv
 
@@ -10,7 +10,12 @@ set venv_name=.venv
 echo ==============================
 cd /d "%~dp0"
 echo 當前目錄 : %cd%
-echo 目前資料庫位置 : %db_name%
+if exist "%cd%\backend\%db_folder_name%\" (
+    echo 目前資料庫位置 : %cd%\backend\%db_folder_name%
+) else (
+    echo mariadb 未存在於 %cd%\backend\%db_folder_name% 下，偵測失敗。
+    goto END
+)
 echo ==============================
 echo.
 
@@ -42,18 +47,16 @@ echo.
 
 
 :: init
-echo 0/3 finish.
-echo 前端套件安裝中....
+echo (1/3) 前端套件安裝中(會稍微有點久)....
 call npm install
 echo 套件安裝完成。
-
-echo 1/3 finish.
+echo.
 
 echo 切換路徑...
 cd backend
 echo 當前路徑 : %cd%
 
-echo 安裝 python 必要模組...
+echo (2/3) 安裝 python 必要模組...
 if not exist "%venv_name%" (
     python -m venv %venv_name%
     echo 虛擬環境建立成功。
@@ -63,21 +66,29 @@ if not exist "%venv_name%" (
 "%cd%\%venv_name%\Scripts\python.exe" -m pip install --upgrade pip
 "%cd%\%venv_name%\Scripts\pip.exe" install -r requirements.txt
 echo 安裝完成。
+echo.
 
-echo 2/3 finish.
-echo 建構資料庫
+:: check mariadb server
+"%db_folder_name%\bin\mariadb-admin.exe" -u root ping >nul 2>&1
+if %errorlevel% neq 0 (
+    echo 資料庫未啟動，啟動中....
+    start "mariaDB server" "%db_folder_name%\bin\mysqld.exe" --console
+    echo 啟動完成。
+    echo.
+)
+
+echo (3/3) 建構資料庫
 if "%passwd%"=="" (
-    "%db_name%\bin\mariadb.exe" -u root < schema.sql
-    "%db_name%\bin\mariadb.exe" -u root < data_setting.sql
+    ("%db_folder_name%\bin\mariadb.exe" -u root < schema.sql) > nul 2>&1 && echo 【schema.sql 成功】|| echo 【schema.sql 失敗】
+    ("%db_folder_name%\bin\mariadb.exe" -u root < data_setting.sql) > nul 2>&1 && echo 【data_setting.sql 成功】|| echo 【data_setting.sql 失敗】
 ) else (
-    "%db_name%\bin\mariadb.exe" -u root -p"%passwd%" < schema.sql
-    "%db_name%\bin\mariadb.exe" -u root -p"%passwd%" < data_setting.sql
+    ("%db_folder_name%\bin\mariadb.exe" -u root -p"%passwd%" < schema.sql) > nul 2>&1 && echo 【schema.sql 成功】|| echo 【schema.sql 失敗】
+    ("%db_folder_name%\bin\mariadb.exe" -u root -p"%passwd%" < data_setting.sql) > nul 2>&1 && echo 【data_setting.sql 成功】|| echo 【data_setting.sql 失敗】
 )
 echo 資料庫建構完成。
+echo.
 
-echo 3/3 finish.
 echo 初始化完成
-
 
 :END
 pause
