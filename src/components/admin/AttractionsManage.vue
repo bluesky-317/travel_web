@@ -48,16 +48,39 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="地點" prop="location">
-              <el-input v-model="form.location" placeholder="例：台北市士林區" />
+            <el-form-item label="縣市" prop="city">
+              <el-select v-model="form.city" placeholder="請選擇縣市" style="width:100%">
+                <el-option label="基隆市" value="基隆市" />
+                <el-option label="台北市" value="台北市" />
+                <el-option label="新北市" value="新北市" />
+                <el-option label="桃園市" value="桃園市" />
+                <el-option label="新竹市" value="新竹市" />
+                <el-option label="新竹縣" value="新竹縣" />
+                <el-option label="苗栗縣" value="苗栗縣" />
+                <el-option label="台中市" value="台中市" />
+                <el-option label="彰化縣" value="彰化縣" />
+                <el-option label="南投縣" value="南投縣" />
+                <el-option label="雲林縣" value="雲林縣" />
+                <el-option label="嘉義市" value="嘉義市" />
+                <el-option label="嘉義縣" value="嘉義縣" />
+                <el-option label="台南市" value="台南市" />
+                <el-option label="高雄市" value="高雄市" />
+                <el-option label="屏東縣" value="屏東縣" />
+                <el-option label="宜蘭縣" value="宜蘭縣" />
+                <el-option label="花蓮縣" value="花蓮縣" />
+                <el-option label="台東縣" value="台東縣" />
+                <el-option label="澎湖縣" value="澎湖縣" />
+                <el-option label="金門縣" value="金門縣" />
+                <el-option label="連江縣" value="連江縣" />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
 
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="城市">
-              <el-input v-model="form.city" placeholder="例：台北市" />
+            <el-form-item label="地址" prop="location">
+              <el-input v-model="form.location" placeholder="例：台北市士林區" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -192,6 +215,7 @@ const form = ref(emptyForm())
 const rules = {
   name: [{ required: true, message: '請輸入景點名稱', trigger: 'blur' }],
   location: [{ required: true, message: '請輸入地點', trigger: 'blur' }],
+  city: [{ required: true, message: '請輸入縣市', trigger: 'blur' }],
 }
 
 async function loadAttractions() {

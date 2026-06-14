@@ -1,11 +1,15 @@
 import os
 import uuid
-from datetime import date
+from datetime import date, datetime, time
 
 from fastapi import HTTPException
+from sqlalchemy import asc, delete, desc, func, insert, or_, select, update
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.orm import Session, aliased
 
 import database as db
 from auth import PasswordService, SessionStore
+from models import Attraction, Category, City, Itinerary, ItineraryItem, User
 from schemas import (
     AddItemBody,
     AttractionBody,
@@ -17,11 +21,26 @@ from schemas import (
     UpdateItineraryBody,
     UpdateProfileBody,
 )
-from utils import CITY_NS_ORDER, fmt_time, json_text, norm_city, split_location
+from utils import fmt_time, json_text, norm_city, split_location
+
+
+ATTRACTION_REQUIRED_COLUMNS = (
+    "AttractionId", "Name", "CategoryId", "CityId", "Address", "Lat", "Lon",
+    "ImageUrl", "Description", "OpeningHours", "TicketInfo", "WebsiteUrl",
+    "Rating", "Phone", "SourceUpdatedAt", "IsDeleted", "CreatedAt", "UpdatedAt",
+)
+
+
+def _iso(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    return str(value)
 
 
 class SchemaService:
-    REQUIRED_TABLES = ("users", "categories", "cities", "attractions", "itineraries", "itinerary_items")
+    REQUIRED_TABLES = ("Users", "Categories", "Cities", "Attractions", "Itineraries", "ItineraryItems")
     REMOVED_TABLES = (
         "user_roles",
         "towns",
@@ -32,48 +51,16 @@ class SchemaService:
         "user_visited",
     )
 
-    def has_columns(self, table: str, columns: tuple[str, ...]) -> bool:
-        rows = db.query(
-            """SELECT column_name
-               FROM information_schema.columns
-               WHERE table_schema=DATABASE() AND table_name=%s""",
-            (table,),
-        )
-        existing = {row["column_name"] for row in rows}
-        return all(col in existing for col in columns)
-
-    def has_exact_columns(self, table: str, columns: tuple[str, ...]) -> bool:
-        rows = db.query(
-            """SELECT column_name
-               FROM information_schema.columns
-               WHERE table_schema=DATABASE() AND table_name=%s""",
-            (table,),
-        )
-        return {row["column_name"] for row in rows} == set(columns)
-
-    def has_removed_tables(self) -> bool:
-        placeholders = ",".join(["%s"] * len(self.REMOVED_TABLES))
-        rows = db.query(
-            f"""SELECT table_name
-                FROM information_schema.tables
-                WHERE table_schema=DATABASE()
-                  AND table_name IN ({placeholders})""",
-            self.REMOVED_TABLES,
-        )
-        return bool(rows)
-
     def ensure(self) -> None:
+        tables = db.get_tables()
+        has_required = all(t.lower() in tables for t in self.REQUIRED_TABLES)
         schema_ok = (
-            db.schema_ready(self.REQUIRED_TABLES)
-            and self.has_columns("users", ("role",))
-            and self.has_exact_columns("attractions", (
-                "attraction_id", "name", "category_id", "city_id", "address", "lat", "lon",
-                "image_url", "description", "opening_hours", "ticket_info", "website_url",
-                "rating", "phone", "source_updated_at", "is_deleted", "created_at", "updated_at",
-            ))
-            and self.has_columns("itinerary_items", ("day_index",))
-            and not self.has_columns("itineraries", ("is_ai",))
-            and not self.has_removed_tables()
+            has_required
+            and "Role" in db.get_columns("Users")
+            and db.get_columns("Attractions") == set(ATTRACTION_REQUIRED_COLUMNS)
+            and "DayIndex" in db.get_columns("ItineraryItems")
+            and "IsAi" not in db.get_columns("Itineraries")
+            and not any(t.lower() in tables for t in self.REMOVED_TABLES)
         )
         if schema_ok:
             return
@@ -82,21 +69,24 @@ class SchemaService:
 
 
 class LookupService:
-    def get_or_create_id(self, table: str, id_column: str, name: str | None) -> int | None:
-        value = (name or "").strip()
+    """Helpers for category/city upserts. Called from inside an existing session."""
+
+    def category_id(self, session: Session, name: str | None) -> int | None:
+        return self._upsert(session, Category, "category_id", name)
+
+    def city_id(self, session: Session, name: str | None) -> int | None:
+        return self._upsert(session, City, "city_id", norm_city(name))
+
+    def _upsert(self, session: Session, model, id_col: str, value: str | None) -> int | None:
+        value = (value or "").strip()
         if not value:
             return None
-        if table not in {"categories", "cities"}:
-            raise ValueError("unsupported lookup table")
-        db.execute(f"INSERT IGNORE INTO {table} (name) VALUES (%s)", (value,))
-        row = db.query_one(f"SELECT {id_column} FROM {table} WHERE name=%s", (value,))
-        return row[id_column] if row else None
-
-    def category_id(self, name: str | None) -> int | None:
-        return self.get_or_create_id("categories", "category_id", name)
-
-    def city_id(self, name: str | None) -> int | None:
-        return self.get_or_create_id("cities", "city_id", norm_city(name))
+        # MariaDB INSERT IGNORE keeps existing rows and is race-safe.
+        session.execute(mysql_insert(model).values(name=value).prefix_with("IGNORE"))
+        row_id = session.execute(
+            select(getattr(model, id_col)).where(model.name == value)
+        ).scalar_one_or_none()
+        return row_id
 
 
 class UserService:
@@ -105,59 +95,86 @@ class UserService:
         self.sessions = sessions
 
     def seed_defaults(self) -> None:
-        count = db.query_one("SELECT COUNT(*) AS cnt FROM users")["cnt"]
-        if count:
-            return
-        defaults = [
-            ("test@test.com", "test123", "測試用戶", "user"),
-            ("admin@test.com", "admin123", "系統管理員", "admin"),
-        ]
-        for email, password, name, role in defaults:
-            db.execute(
-                "INSERT INTO users (email, password_hash, name, role) VALUES (%s,%s,%s,%s)",
-                (email, self.passwords.hash(password), name, role),
-            )
+        with db.session_scope() as session:
+            count = session.execute(select(func.count()).select_from(User)).scalar_one()
+            if count:
+                return
+            session.add_all([
+                User(
+                    email="test@test.com",
+                    password_hash=self.passwords.hash("test123"),
+                    name="測試用戶",
+                    role="user",
+                ),
+                User(
+                    email="admin@test.com",
+                    password_hash=self.passwords.hash("admin123"),
+                    name="系統管理員",
+                    role="admin",
+                ),
+            ])
 
     def login(self, email: str, password: str) -> str:
-        row = db.query_one("SELECT * FROM users WHERE email=%s", (email,))
-        if not row or not self.passwords.verify(password, row["password_hash"]):
-            raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
-        db.execute("UPDATE users SET login_time=NOW() WHERE user_id=%s", (row["user_id"],))
-        return self.sessions.create({
-            "id": str(row["user_id"]),
-            "email": row["email"],
-            "name": row["name"],
-            "role": row["role"],
-        })
+        with db.session_scope() as session:
+            user = session.execute(
+                select(User).where(User.email == email)
+            ).scalar_one_or_none()
+            if not user or not self.passwords.verify(password, user.password_hash):
+                raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
+            session.execute(
+                update(User)
+                .where(User.user_id == user.user_id)
+                .values(login_time=func.now())
+            )
+            return self.sessions.create({
+                "id": str(user.user_id),
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
+            })
 
     def register(self, body: RegisterBody) -> str:
-        if db.query_one("SELECT user_id FROM users WHERE email=%s", (body.email,)):
-            raise HTTPException(status_code=409, detail="此 Email 已被註冊")
-        name = body.name or body.email.split("@")[0]
-        user_id = db.execute(
-            "INSERT INTO users (email, password_hash, name, role) VALUES (%s,%s,%s,'user')",
-            (body.email, self.passwords.hash(body.password), name),
-        )
-        return self.sessions.create({"id": str(user_id), "email": body.email, "name": name, "role": "user"})
+        with db.session_scope() as session:
+            exists = session.execute(
+                select(User.user_id).where(User.email == body.email)
+            ).scalar_one_or_none()
+            if exists:
+                raise HTTPException(status_code=409, detail="此 Email 已被註冊")
+            name = body.name or body.email.split("@")[0]
+            user = User(
+                email=body.email,
+                password_hash=self.passwords.hash(body.password),
+                name=name,
+                role="user",
+            )
+            session.add(user)
+            session.flush()
+            user_id = user.user_id
+        return self.sessions.create({
+            "id": str(user_id),
+            "email": body.email,
+            "name": name,
+            "role": "user",
+        })
 
     def update_profile(self, body: UpdateProfileBody, current_user: dict, token: str | None) -> None:
-        fields, params = [], []
-        if body.name is not None:
-            fields.append("name=%s")
-            params.append(body.name)
-        if body.email is not None:
-            dup = db.query_one(
-                "SELECT user_id FROM users WHERE email=%s AND user_id!=%s",
-                (body.email, current_user["id"]),
+        values: dict = {}
+        with db.session_scope() as session:
+            if body.email is not None:
+                dup = session.execute(
+                    select(User.user_id)
+                    .where(User.email == body.email, User.user_id != int(current_user["id"]))
+                ).scalar_one_or_none()
+                if dup:
+                    raise HTTPException(status_code=409, detail="此 Email 已被使用")
+                values["email"] = body.email
+            if body.name is not None:
+                values["name"] = body.name
+            if not values:
+                raise HTTPException(status_code=400, detail="沒有需要更新的欄位")
+            session.execute(
+                update(User).where(User.user_id == int(current_user["id"])).values(**values)
             )
-            if dup:
-                raise HTTPException(status_code=409, detail="此 Email 已被使用")
-            fields.append("email=%s")
-            params.append(body.email)
-        if not fields:
-            raise HTTPException(status_code=400, detail="沒有需要更新的欄位")
-        params.append(current_user["id"])
-        db.execute(f"UPDATE users SET {', '.join(fields)} WHERE user_id=%s", params)
         if token:
             if body.name is not None:
                 self.sessions.update_user(token, name=body.name)
@@ -165,249 +182,379 @@ class UserService:
                 self.sessions.update_user(token, email=body.email)
 
     def change_password(self, body: ChangePasswordBody, current_user: dict) -> None:
-        row = db.query_one("SELECT password_hash FROM users WHERE user_id=%s", (current_user["id"],))
-        if not row or not self.passwords.verify(body.oldPassword, row["password_hash"]):
-            raise HTTPException(status_code=400, detail="原密碼錯誤")
-        db.execute(
-            "UPDATE users SET password_hash=%s WHERE user_id=%s",
-            (self.passwords.hash(body.newPassword), current_user["id"]),
-        )
+        with db.session_scope() as session:
+            hashed = session.execute(
+                select(User.password_hash).where(User.user_id == int(current_user["id"]))
+            ).scalar_one_or_none()
+            if not hashed or not self.passwords.verify(body.oldPassword, hashed):
+                raise HTTPException(status_code=400, detail="原密碼錯誤")
+            session.execute(
+                update(User)
+                .where(User.user_id == int(current_user["id"]))
+                .values(password_hash=self.passwords.hash(body.newPassword))
+            )
 
     def delete_account(self, user_id: str) -> None:
-        db.execute("DELETE FROM users WHERE user_id=%s", (user_id,))
+        with db.session_scope() as session:
+            session.execute(delete(User).where(User.user_id == int(user_id)))
         self.sessions.remove_user_sessions(user_id)
 
     def list_users(self) -> list[dict]:
-        return db.query(
-            """SELECT user_id AS id, email, name, role, create_time, login_time
-               FROM users
-               ORDER BY user_id"""
-        )
+        with db.session_scope() as session:
+            rows = session.execute(
+                select(
+                    User.user_id,
+                    User.email,
+                    User.name,
+                    User.role,
+                    User.create_time,
+                    User.login_time,
+                ).order_by(User.user_id)
+            ).all()
+        return [{
+            "id": row.user_id,
+            "email": row.email,
+            "name": row.name,
+            "role": row.role,
+            "create_time": _iso(row.create_time),
+            "login_time": _iso(row.login_time),
+        } for row in rows]
 
     def delete_user(self, user_id: str) -> None:
-        row = db.query_one("SELECT role FROM users WHERE user_id=%s", (user_id,))
-        if not row:
-            raise HTTPException(status_code=404, detail="用戶不存在")
-        if row["role"] == "admin":
-            raise HTTPException(status_code=403, detail="不能刪除管理員")
-        db.execute("DELETE FROM users WHERE user_id=%s", (user_id,))
+        with db.session_scope() as session:
+            role = session.execute(
+                select(User.role).where(User.user_id == int(user_id))
+            ).scalar_one_or_none()
+            if role is None:
+                raise HTTPException(status_code=404, detail="用戶不存在")
+            if role == "admin":
+                raise HTTPException(status_code=403, detail="不能刪除管理員")
+            session.execute(delete(User).where(User.user_id == int(user_id)))
         self.sessions.remove_user_sessions(str(user_id))
 
 
 class AttractionService:
+    SORT_KEYS = {
+        # 由北向南：緯度由大到小（北部緯度較高）
+        "ns": (Attraction.lat.is_(None), desc(Attraction.lat), Attraction.attraction_id),
+        # 由南向北：緯度由小到大
+        "sn": (Attraction.lat.is_(None), asc(Attraction.lat), Attraction.attraction_id),
+        "updated": (
+            Attraction.source_updated_at.is_(None),
+            desc(Attraction.source_updated_at),
+            Attraction.attraction_id,
+        ),
+        "rating": (
+            Attraction.rating.is_(None),
+            desc(Attraction.rating),
+            Attraction.attraction_id,
+        ),
+    }
+    DEFAULT_ORDER = (Attraction.attraction_id,)
+
     def __init__(self, lookups: LookupService):
         self.lookups = lookups
-        self.items: list[dict] = []
-        self.item_map: dict[str, int] = {}
 
-    def to_api(self, row: dict) -> dict:
+    def _row_to_api(self, attraction: Attraction, category_name: str | None, city_name: str | None) -> dict:
+        updated_at = attraction.source_updated_at or attraction.updated_at
         return {
-            "id": row["attraction_id"],
-            "name": row["name"],
-            "category": row.get("category") or "",
-            "city": row.get("city") or "",
-            "location": row.get("location") or "",
-            "imageUrl": row.get("image_url"),
-            "description": row.get("description") or "",
-            "lat": float(row["lat"]) if row.get("lat") is not None else None,
-            "lon": float(row["lon"]) if row.get("lon") is not None else None,
-            "openingHours": row.get("opening_hours"),
-            "ticketInfo": row.get("ticket_info"),
-            "rating": float(row["rating"]) if row.get("rating") is not None else None,
-            "phone": row.get("phone"),
-            "website": row.get("website_url"),
-            "updatedAt": row.get("source_updated_at") or row.get("updated_at") or "",
+            "id": attraction.attraction_id,
+            "name": attraction.name,
+            "category": category_name or "",
+            "city": city_name or "",
+            "location": attraction.address or "",
+            "imageUrl": attraction.image_url,
+            "description": attraction.description or "",
+            "lat": float(attraction.lat) if attraction.lat is not None else None,
+            "lon": float(attraction.lon) if attraction.lon is not None else None,
+            "openingHours": attraction.opening_hours,
+            "ticketInfo": attraction.ticket_info,
+            "rating": float(attraction.rating) if attraction.rating is not None else None,
+            "phone": attraction.phone,
+            "website": attraction.website_url,
+            "updatedAt": _iso(updated_at) or "",
         }
 
-    def refresh(self) -> None:
-        rows = db.query(
-            """SELECT a.*, cat.name AS category, c.name AS city, a.address AS location
-               FROM attractions a
-               LEFT JOIN categories cat ON a.category_id = cat.category_id
-               LEFT JOIN cities c ON a.city_id = c.city_id
-               WHERE a.is_deleted = FALSE
-               ORDER BY a.attraction_id"""
+    def _base_select(self):
+        cat = aliased(Category)
+        city = aliased(City)
+        stmt = (
+            select(Attraction, cat.name, city.name)
+            .outerjoin(cat, Attraction.category_id == cat.category_id)
+            .outerjoin(city, Attraction.city_id == city.city_id)
         )
-        self.items = [self.to_api(row) for row in rows]
-        self.item_map = {item["id"]: i for i, item in enumerate(self.items)}
+        return stmt, cat, city
+
+    def _apply_filters(self, stmt, cat, city, q, cities, category):
+        stmt = stmt.where(Attraction.is_deleted.is_(False))
+        if q:
+            like = f"%{q}%"
+            stmt = stmt.where(or_(Attraction.name.like(like), Attraction.address.like(like)))
+        if cities:
+            city_list = [norm_city(c.strip()) for c in cities.split(",") if c.strip()]
+            if city_list:
+                stmt = stmt.where(city.name.in_(city_list))
+        if category:
+            stmt = stmt.where(cat.name == category)
+        return stmt
 
     def list(self, q=None, cities=None, category=None, sort=None, page=None, page_size=10):
-        result = [{**item} for item in self.items]
-        if q:
-            ql = q.lower()
-            result = [
-                item for item in result
-                if ql in item["name"].lower() or ql in (item.get("location") or "").lower()
-            ]
-        if cities:
-            city_set = {norm_city(c.strip()) for c in cities.split(",") if c.strip()}
-            result = [item for item in result if norm_city(item.get("city")) in city_set]
-        if category:
-            result = [item for item in result if item.get("category") == category]
+        with db.session_scope() as session:
+            stmt, cat, city = self._base_select()
+            stmt = self._apply_filters(stmt, cat, city, q, cities, category)
+            order = self.SORT_KEYS.get(sort, self.DEFAULT_ORDER)
+            stmt = stmt.order_by(*order)
 
-        if sort == "ns":
-            result.sort(key=lambda a: CITY_NS_ORDER.get(norm_city(a.get("city")), 99))
-        elif sort == "sn":
-            result.sort(key=lambda a: CITY_NS_ORDER.get(norm_city(a.get("city")), 99), reverse=True)
-        elif sort == "updated":
-            result.sort(key=lambda a: a.get("updatedAt") or "", reverse=True)
-        elif sort == "rating":
-            result.sort(key=lambda a: a.get("rating") or 0, reverse=True)
+            if page is not None:
+                count_stmt, c_cat, c_city = self._base_select()
+                count_stmt = self._apply_filters(count_stmt, c_cat, c_city, q, cities, category)
+                count_stmt = select(func.count()).select_from(count_stmt.subquery())
+                total = session.execute(count_stmt).scalar_one()
+                offset = (page - 1) * page_size
+                rows = session.execute(stmt.limit(page_size).offset(offset)).all()
+                return {
+                    "items": [self._row_to_api(r[0], r[1], r[2]) for r in rows],
+                    "total": total,
+                }
 
-        if page is not None:
-            total = len(result)
-            start = (page - 1) * page_size
-            return {"items": result[start:start + page_size], "total": total}
-        return result
+            rows = session.execute(stmt).all()
+            return [self._row_to_api(r[0], r[1], r[2]) for r in rows]
 
     def get(self, attraction_id: str) -> dict:
-        idx = self.item_map.get(attraction_id)
-        if idx is None:
-            raise HTTPException(status_code=404, detail="景點不存在")
-        return self.items[idx]
+        with db.session_scope() as session:
+            stmt, cat, city = self._base_select()
+            stmt = stmt.where(
+                Attraction.attraction_id == attraction_id,
+                Attraction.is_deleted.is_(False),
+            )
+            row = session.execute(stmt).first()
+            if not row:
+                raise HTTPException(status_code=404, detail="景點不存在")
+            return self._row_to_api(row[0], row[1], row[2])
 
     def create(self, body: AttractionBody) -> dict:
         new_id = str(uuid.uuid4())
-        city = norm_city(body.city)
-        if not city:
-            city, _ = split_location(body.location)
-        db.execute(
-            """INSERT INTO attractions
-               (attraction_id, name, category_id, city_id, address, lat, lon, image_url,
-                description, opening_hours, ticket_info, website_url,
-                rating, phone, source_updated_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())""",
-            (new_id, body.name, self.lookups.category_id(body.category), self.lookups.city_id(city),
-             body.location, body.lat, body.lon, body.imageUrl, body.description,
-             json_text(body.openingHours), json_text(body.ticketInfo), body.website,
-             body.rating, body.phone),
-        )
-        self.refresh()
+        city_name = norm_city(body.city)
+        if not city_name:
+            city_name, _ = split_location(body.location)
+        with db.session_scope() as session:
+            session.execute(
+                insert(Attraction).values(
+                    attraction_id=new_id,
+                    name=body.name,
+                    category_id=self.lookups.category_id(session, body.category),
+                    city_id=self.lookups.city_id(session, city_name),
+                    address=body.location,
+                    lat=body.lat,
+                    lon=body.lon,
+                    image_url=body.imageUrl,
+                    description=body.description,
+                    opening_hours=json_text(body.openingHours),
+                    ticket_info=json_text(body.ticketInfo),
+                    website_url=body.website,
+                    rating=body.rating,
+                    phone=body.phone,
+                    source_updated_at=func.now(),
+                )
+            )
         return self.get(new_id)
 
     def update(self, attraction_id: str, body: AttractionBody) -> dict:
-        self.get(attraction_id)
-        city = norm_city(body.city)
-        if not city:
-            city, _ = split_location(body.location)
-        db.execute(
-            """UPDATE attractions
-               SET name=%s, category_id=%s, city_id=%s, address=%s, lat=%s, lon=%s,
-                   image_url=%s, description=%s, opening_hours=%s, ticket_info=%s,
-                   website_url=%s, rating=%s, phone=%s,
-                   source_updated_at=NOW()
-               WHERE attraction_id=%s""",
-            (body.name, self.lookups.category_id(body.category), self.lookups.city_id(city),
-             body.location, body.lat, body.lon, body.imageUrl, body.description,
-             json_text(body.openingHours), json_text(body.ticketInfo), body.website,
-             body.rating, body.phone, attraction_id),
-        )
-        self.refresh()
+        city_name = norm_city(body.city)
+        if not city_name:
+            city_name, _ = split_location(body.location)
+        with db.session_scope() as session:
+            exists = session.execute(
+                select(Attraction.attraction_id).where(
+                    Attraction.attraction_id == attraction_id,
+                    Attraction.is_deleted.is_(False),
+                )
+            ).scalar_one_or_none()
+            if not exists:
+                raise HTTPException(status_code=404, detail="景點不存在")
+            session.execute(
+                update(Attraction)
+                .where(Attraction.attraction_id == attraction_id)
+                .values(
+                    name=body.name,
+                    category_id=self.lookups.category_id(session, body.category),
+                    city_id=self.lookups.city_id(session, city_name),
+                    address=body.location,
+                    lat=body.lat,
+                    lon=body.lon,
+                    image_url=body.imageUrl,
+                    description=body.description,
+                    opening_hours=json_text(body.openingHours),
+                    ticket_info=json_text(body.ticketInfo),
+                    website_url=body.website,
+                    rating=body.rating,
+                    phone=body.phone,
+                    source_updated_at=func.now(),
+                )
+            )
         return self.get(attraction_id)
 
     def delete(self, attraction_id: str) -> None:
-        self.get(attraction_id)
-        db.execute("UPDATE attractions SET is_deleted=TRUE WHERE attraction_id=%s", (attraction_id,))
-        self.refresh()
+        with db.session_scope() as session:
+            result = session.execute(
+                update(Attraction)
+                .where(
+                    Attraction.attraction_id == attraction_id,
+                    Attraction.is_deleted.is_(False),
+                )
+                .values(is_deleted=True)
+            )
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="景點不存在")
 
 
 class ItineraryService:
-    def load_items(self, itin_id: str, num_days: int) -> list:
-        rows = db.query(
-            """SELECT ii.item_id, ii.attraction_id, ii.day_index, ii.start_time,
-                      ii.end_time, ii.note, ii.order_index,
-                      a.name, a.address AS location, cat.name AS category, a.image_url, a.opening_hours,
-                      a.ticket_info, a.rating
-               FROM itinerary_items ii
-               JOIN attractions a ON ii.attraction_id = a.attraction_id
-               LEFT JOIN categories cat ON a.category_id = cat.category_id
-               WHERE ii.itinerary_id = %s
-               ORDER BY ii.day_index, ii.order_index""",
-            (itin_id,),
+    def _load_items_for_itinerary(self, session: Session, itin_id: str, num_days: int) -> list:
+        stmt = (
+            select(
+                ItineraryItem.item_id,
+                ItineraryItem.attraction_id,
+                ItineraryItem.day_index,
+                ItineraryItem.start_time,
+                ItineraryItem.end_time,
+                ItineraryItem.note,
+                ItineraryItem.order_index,
+                Attraction.name,
+                Attraction.address,
+                Category.name.label("category_name"),
+                Attraction.image_url,
+                Attraction.opening_hours,
+                Attraction.ticket_info,
+                Attraction.rating,
+            )
+            .join(Attraction, ItineraryItem.attraction_id == Attraction.attraction_id)
+            .outerjoin(Category, Attraction.category_id == Category.category_id)
+            .where(ItineraryItem.itinerary_id == itin_id)
+            .order_by(ItineraryItem.day_index, ItineraryItem.order_index)
         )
+        rows = session.execute(stmt).all()
         days = [{"items": []} for _ in range(max(1, num_days))]
         for row in rows:
-            day_idx = int(row.get("day_index") or 0)
+            day_idx = int(row.day_index or 0)
             if not (0 <= day_idx < len(days)):
                 day_idx = 0
             days[day_idx]["items"].append({
-                "uid": row["item_id"],
-                "attractionId": row["attraction_id"],
-                "name": row.get("name") or "",
-                "location": row.get("location") or "",
-                "category": row.get("category") or "",
-                "startTime": fmt_time(row.get("start_time")),
-                "endTime": fmt_time(row.get("end_time")),
-                "note": row.get("note") or "",
-                "imageUrl": row.get("image_url"),
-                "openingHours": row.get("opening_hours"),
-                "ticketInfo": row.get("ticket_info"),
-                "rating": float(row["rating"]) if row.get("rating") is not None else None,
+                "uid": row.item_id,
+                "attractionId": row.attraction_id,
+                "name": row.name or "",
+                "location": row.address or "",
+                "category": row.category_name or "",
+                "startTime": fmt_time(row.start_time),
+                "endTime": fmt_time(row.end_time),
+                "note": row.note or "",
+                "imageUrl": row.image_url,
+                "openingHours": row.opening_hours,
+                "ticketInfo": row.ticket_info,
+                "rating": float(row.rating) if row.rating is not None else None,
             })
         return days
 
-    def _owned_itinerary(self, itin_id: str, user_id: str) -> dict:
-        row = db.query_one(
-            "SELECT itinerary_id FROM itineraries WHERE itinerary_id=%s AND user_id=%s",
-            (itin_id, user_id),
-        )
-        if not row:
+    def _ensure_owned(self, session: Session, itin_id: str, user_id: str) -> None:
+        owned = session.execute(
+            select(Itinerary.itinerary_id).where(
+                Itinerary.itinerary_id == itin_id,
+                Itinerary.user_id == int(user_id),
+            )
+        ).scalar_one_or_none()
+        if not owned:
             raise HTTPException(status_code=404, detail="行程不存在")
-        return row
 
     def list_active(self, user_id: str) -> list[dict]:
-        rows = db.query(
-            "SELECT * FROM itineraries WHERE user_id=%s AND is_deleted=FALSE ORDER BY created_at DESC",
-            (user_id,),
-        )
-        result = []
-        for row in rows:
-            sd = str(row["start_date"]) if row.get("start_date") else str(date.today())
-            result.append({
-                "id": row["itinerary_id"],
-                "title": row["title"],
-                "startDate": sd,
-                "numDays": row["num_days"],
-                "isDeleted": False,
-                "days": self.load_items(row["itinerary_id"], row["num_days"]),
-            })
-        return result
+        with db.session_scope() as session:
+            itineraries = session.execute(
+                select(Itinerary)
+                .where(
+                    Itinerary.user_id == int(user_id),
+                    Itinerary.is_deleted.is_(False),
+                )
+                .order_by(desc(Itinerary.created_at))
+            ).scalars().all()
+            result = []
+            for itin in itineraries:
+                sd = itin.start_date.isoformat() if itin.start_date else date.today().isoformat()
+                result.append({
+                    "id": itin.itinerary_id,
+                    "title": itin.title,
+                    "startDate": sd,
+                    "numDays": itin.num_days,
+                    "isDeleted": False,
+                    "days": self._load_items_for_itinerary(session, itin.itinerary_id, itin.num_days),
+                })
+            return result
 
     def list_trash(self, user_id: str) -> list[dict]:
-        rows = db.query(
-            "SELECT * FROM itineraries WHERE user_id=%s AND is_deleted=TRUE ORDER BY updated_at DESC",
-            (user_id,),
-        )
+        with db.session_scope() as session:
+            rows = session.execute(
+                select(Itinerary)
+                .where(
+                    Itinerary.user_id == int(user_id),
+                    Itinerary.is_deleted.is_(True),
+                )
+                .order_by(desc(Itinerary.updated_at))
+            ).scalars().all()
         return [{
-            "id": row["itinerary_id"],
-            "title": row["title"],
-            "startDate": str(row["start_date"]) if row.get("start_date") else str(date.today()),
-            "numDays": row["num_days"],
+            "id": itin.itinerary_id,
+            "title": itin.title,
+            "startDate": itin.start_date.isoformat() if itin.start_date else date.today().isoformat(),
+            "numDays": itin.num_days,
             "isDeleted": True,
             "days": [],
-        } for row in rows]
+        } for itin in rows]
 
     def current(self, user_id: str) -> dict:
-        row = db.query_one(
-            "SELECT * FROM itineraries WHERE user_id=%s AND is_deleted=FALSE ORDER BY updated_at DESC LIMIT 1",
-            (user_id,),
-        )
-        if not row:
-            return {"id": None, "items": []}
-        items = db.query(
-            """SELECT item_id, attraction_id, day_index, start_time, end_time, note, order_index
-               FROM itinerary_items WHERE itinerary_id=%s ORDER BY day_index, order_index""",
-            (row["itinerary_id"],),
-        )
-        return {"id": row["itinerary_id"], "items": items}
+        with db.session_scope() as session:
+            itin = session.execute(
+                select(Itinerary)
+                .where(
+                    Itinerary.user_id == int(user_id),
+                    Itinerary.is_deleted.is_(False),
+                )
+                .order_by(desc(Itinerary.updated_at))
+                .limit(1)
+            ).scalar_one_or_none()
+            if not itin:
+                return {"id": None, "items": []}
+            items = session.execute(
+                select(
+                    ItineraryItem.item_id,
+                    ItineraryItem.attraction_id,
+                    ItineraryItem.day_index,
+                    ItineraryItem.start_time,
+                    ItineraryItem.end_time,
+                    ItineraryItem.note,
+                    ItineraryItem.order_index,
+                )
+                .where(ItineraryItem.itinerary_id == itin.itinerary_id)
+                .order_by(ItineraryItem.day_index, ItineraryItem.order_index)
+            ).all()
+            return {
+                "id": itin.itinerary_id,
+                "items": [{
+                    "item_id": row.item_id,
+                    "attraction_id": row.attraction_id,
+                    "day_index": row.day_index,
+                    "start_time": _iso(row.start_time),
+                    "end_time": _iso(row.end_time),
+                    "note": row.note,
+                    "order_index": row.order_index,
+                } for row in items],
+            }
 
     def create(self, body: CreateItineraryBody, user_id: str) -> dict:
         itin_id = str(uuid.uuid4())
-        db.execute(
-            """INSERT INTO itineraries (itinerary_id, user_id, title, start_date, num_days)
-               VALUES (%s,%s,%s,%s,%s)""",
-            (itin_id, user_id, body.title, body.startDate, body.numDays),
-        )
+        with db.session_scope() as session:
+            session.add(Itinerary(
+                itinerary_id=itin_id,
+                user_id=int(user_id),
+                title=body.title,
+                start_date=date.fromisoformat(body.startDate) if body.startDate else None,
+                num_days=body.numDays,
+            ))
         return {
             "id": itin_id,
             "title": body.title,
@@ -418,85 +565,109 @@ class ItineraryService:
         }
 
     def update(self, itin_id: str, body: UpdateItineraryBody, user_id: str) -> None:
-        self._owned_itinerary(itin_id, user_id)
-        fields, params = [], []
-        if body.title is not None:
-            fields.append("title=%s")
-            params.append(body.title)
-        if body.startDate is not None:
-            fields.append("start_date=%s")
-            params.append(body.startDate)
-        if body.numDays is not None:
-            fields.append("num_days=%s")
-            params.append(body.numDays)
-        if fields:
-            params.append(itin_id)
-            db.execute(f"UPDATE itineraries SET {', '.join(fields)} WHERE itinerary_id=%s", params)
+        with db.session_scope() as session:
+            self._ensure_owned(session, itin_id, user_id)
+            values: dict = {}
+            if body.title is not None:
+                values["title"] = body.title
+            if body.startDate is not None:
+                values["start_date"] = date.fromisoformat(body.startDate) if body.startDate else None
+            if body.numDays is not None:
+                values["num_days"] = body.numDays
+            if values:
+                session.execute(
+                    update(Itinerary).where(Itinerary.itinerary_id == itin_id).values(**values)
+                )
 
     def hard_delete(self, itin_id: str, user_id: str) -> None:
-        self._owned_itinerary(itin_id, user_id)
-        db.execute("DELETE FROM itineraries WHERE itinerary_id=%s", (itin_id,))
+        with db.session_scope() as session:
+            self._ensure_owned(session, itin_id, user_id)
+            session.execute(delete(Itinerary).where(Itinerary.itinerary_id == itin_id))
 
     def soft_delete(self, itin_id: str, user_id: str) -> None:
-        self._owned_itinerary(itin_id, user_id)
-        db.execute("UPDATE itineraries SET is_deleted=TRUE WHERE itinerary_id=%s", (itin_id,))
-
-    def restore(self, itin_id: str, user_id: str) -> None:
-        self._owned_itinerary(itin_id, user_id)
-        db.execute("UPDATE itineraries SET is_deleted=FALSE WHERE itinerary_id=%s", (itin_id,))
-
-    def replace_items(self, itin_id: str, body: PutItemsBody, user_id: str) -> None:
-        self._owned_itinerary(itin_id, user_id)
-        db.execute("DELETE FROM itinerary_items WHERE itinerary_id=%s", (itin_id,))
-        for order_i, item in enumerate(body.items):
-            db.execute(
-                """INSERT INTO itinerary_items
-                   (item_id, itinerary_id, attraction_id, day_index, start_time, end_time, note, order_index)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (item.uid, itin_id, item.attractionId, item.dayIndex,
-                 item.startTime, item.endTime, item.note, order_i),
+        with db.session_scope() as session:
+            self._ensure_owned(session, itin_id, user_id)
+            session.execute(
+                update(Itinerary).where(Itinerary.itinerary_id == itin_id).values(is_deleted=True)
             )
 
+    def restore(self, itin_id: str, user_id: str) -> None:
+        with db.session_scope() as session:
+            self._ensure_owned(session, itin_id, user_id)
+            session.execute(
+                update(Itinerary).where(Itinerary.itinerary_id == itin_id).values(is_deleted=False)
+            )
+
+    def replace_items(self, itin_id: str, body: PutItemsBody, user_id: str) -> None:
+        with db.session_scope() as session:
+            self._ensure_owned(session, itin_id, user_id)
+            session.execute(
+                delete(ItineraryItem).where(ItineraryItem.itinerary_id == itin_id)
+            )
+            payload = [{
+                "item_id": item.uid,
+                "itinerary_id": itin_id,
+                "attraction_id": item.attractionId,
+                "day_index": item.dayIndex,
+                "start_time": item.startTime,
+                "end_time": item.endTime,
+                "note": item.note,
+                "order_index": order_i,
+            } for order_i, item in enumerate(body.items)]
+            if payload:
+                session.execute(insert(ItineraryItem), payload)
+
     def add_item(self, itin_id: str, body: AddItemBody, user_id: str) -> None:
-        self._owned_itinerary(itin_id, user_id)
-        max_order = db.query_one(
-            "SELECT COALESCE(MAX(order_index), -1) AS max_order FROM itinerary_items WHERE itinerary_id=%s AND day_index=%s",
-            (itin_id, body.dayIndex),
-        )
-        order_i = (max_order["max_order"] + 1) if max_order else 0
-        db.execute(
-            """INSERT INTO itinerary_items
-               (item_id, itinerary_id, attraction_id, day_index, start_time, end_time, note, order_index)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (body.uid, itin_id, body.attractionId, body.dayIndex,
-             body.startTime, body.endTime, body.note, order_i),
-        )
+        with db.session_scope() as session:
+            self._ensure_owned(session, itin_id, user_id)
+            max_order = session.execute(
+                select(func.coalesce(func.max(ItineraryItem.order_index), -1)).where(
+                    ItineraryItem.itinerary_id == itin_id,
+                    ItineraryItem.day_index == body.dayIndex,
+                )
+            ).scalar_one()
+            session.add(ItineraryItem(
+                item_id=body.uid,
+                itinerary_id=itin_id,
+                attraction_id=body.attractionId,
+                day_index=body.dayIndex,
+                start_time=body.startTime,
+                end_time=body.endTime,
+                note=body.note,
+                order_index=max_order + 1,
+            ))
 
     def remove_item(self, itin_id: str, item_id: str, user_id: str) -> None:
-        self._owned_itinerary(itin_id, user_id)
-        db.execute("DELETE FROM itinerary_items WHERE item_id=%s AND itinerary_id=%s", (item_id, itin_id))
+        with db.session_scope() as session:
+            self._ensure_owned(session, itin_id, user_id)
+            session.execute(
+                delete(ItineraryItem).where(
+                    ItineraryItem.item_id == item_id,
+                    ItineraryItem.itinerary_id == itin_id,
+                )
+            )
 
     def update_item(self, itin_id: str, item_id: str, body: UpdateItemBody, user_id: str) -> None:
-        self._owned_itinerary(itin_id, user_id)
-        fields, params = [], []
+        values: dict = {}
         if body.startTime is not None:
-            fields.append("start_time=%s")
-            params.append(body.startTime)
+            values["start_time"] = body.startTime
         if body.endTime is not None:
-            fields.append("end_time=%s")
-            params.append(body.endTime)
+            values["end_time"] = body.endTime
         if body.note is not None:
-            fields.append("note=%s")
-            params.append(body.note)
+            values["note"] = body.note
         if body.dayIndex is not None:
-            fields.append("day_index=%s")
-            params.append(body.dayIndex)
+            values["day_index"] = body.dayIndex
         if body.orderIndex is not None:
-            fields.append("order_index=%s")
-            params.append(body.orderIndex)
-        if fields:
-            params.extend([item_id, itin_id])
-            db.execute(
-                f"UPDATE itinerary_items SET {', '.join(fields)} WHERE item_id=%s AND itinerary_id=%s",
-                params,
+            values["order_index"] = body.orderIndex
+        if not values:
+            return
+        with db.session_scope() as session:
+            self._ensure_owned(session, itin_id, user_id)
+            session.execute(
+                update(ItineraryItem)
+                .where(
+                    ItineraryItem.item_id == item_id,
+                    ItineraryItem.itinerary_id == itin_id,
+                )
+                .values(**values)
             )

@@ -45,7 +45,6 @@ class BackendApplication:
     def startup(self) -> None:
         self.schema.ensure()
         self.users.seed_defaults()
-        self.attractions.refresh()
 
 
 application = BackendApplication()

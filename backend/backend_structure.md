@@ -1,80 +1,74 @@
 # 後端架構說明
 
-本後端使用 FastAPI + MariaDB。Python 程式採用分層架構：`main.py` 負責組裝應用程式，`routes.py` 負責 API 路由，`services.py` 負責商業邏輯，`database.py` 負責資料庫存取。
+本後端使用 **FastAPI + SQLAlchemy 2.0 ORM + MariaDB**。Python 程式採分層架構：`main.py` 組裝應用、`routes.py` 是 API 層、`services.py` 是業務邏輯、`models.py` 是 ORM 模型、`database.py` 提供連線與 session、`auth.py` 處理認證、`schemas.py` 是 request body 驗證、`utils.py` 放共用工具。
 
-## 目錄重點
+資料庫名稱：**TravelDB**。所有資料表與欄位皆採 **PascalCase**（無底線、首字母大寫）。
+
+---
+
+## 1. 檔案目錄
 
 | 檔案 | 角色 | 主要功能 |
 |---|---|---|
-| `main.py` | 應用程式入口 | 建立 FastAPI app、設定 CORS、註冊例外處理、掛載 API routes、執行 startup 初始化。 |
-| `routes.py` | API 路由層 | 定義所有 HTTP endpoints，接收 request body/query/path 參數，呼叫 service，回傳統一 `{ "data": ... }` 格式。 |
-| `services.py` | 服務層 | 放主要商業邏輯與資料庫操作流程，包含使用者、景點、行程、schema 檢查、查找表處理。 |
-| `schemas.py` | Request models | 集中管理 Pydantic models，用於驗證前端傳入資料。 |
-| `auth.py` | 認證與 session | 密碼雜湊/驗證、記憶體 session token、FastAPI dependency 認證邏輯。 |
-| `database.py` | 資料庫工具層 | MariaDB 連線、查詢、寫入、schema 檢查、執行 schema 檔、資料型別轉換。 |
-| `utils.py` | 共用工具 | 城市名稱正規化、從地址推城市、dict 轉 JSON 文字、時間格式處理。 |
-| `schema.sql` | 資料庫結構 | 建立資料庫與資料表，目前包含 users、categories、cities、attractions、itineraries、itinerary_items。 |
-| `data_setting.sql` | 景點資料匯入 | 將景點資料匯入 `categories`、`cities`、`attractions`，並重設相關表格資料。 |
-| `attraction_dt.json` | 原始景點資料 | 景點來源資料。目前後端 Python 不會直接讀取此 JSON，匯入由 `data_setting.sql` 負責。 |
+| `main.py` | 應用入口 | 組裝 `BackendApplication`、設定 CORS、註冊例外處理、掛載 routes、執行 startup 初始化。 |
+| `routes.py` | API 路由層 | 定義所有 HTTP endpoint，接收 request 並呼叫 service，統一回傳 `{ "data": ... }`。 |
+| `services.py` | 業務邏輯層 | `SchemaService` / `LookupService` / `UserService` / `AttractionService` / `ItineraryService`。 |
+| `models.py` | ORM 模型層 | SQLAlchemy `DeclarativeBase` + 6 個 Mapped class，對應現有 6 張 PascalCase 表。 |
+| `schemas.py` | Request models | Pydantic models，用於驗證前端傳入資料。 |
+| `auth.py` | 認證與 session | bcrypt 密碼雜湊、記憶體 token session、FastAPI dependency。 |
+| `database.py` | 資料庫工具層 | 建立 SQLAlchemy engine、`SessionLocal`、`session_scope()` context manager、schema 探測、執行 SQL 檔。 |
+| `utils.py` | 共用工具 | 城市名稱正規化、地址解析、JSON 文字轉換、時間格式化。 |
+| `schema.sql` | 資料庫 DDL | 建立 `TravelDB` 與 6 張 PascalCase 表；包含舊版遺留表的 `DROP IF EXISTS` 清理。 |
+| `data_setting.sql` | 景點 seed 資料 | TRUNCATE 並重新匯入 `Categories` / `Cities` / `Attractions`。 |
+| `attraction_dt.json` | 原始景點資料 | 僅供生成 `data_setting.sql` 參考，後端 Python 不直接讀取。 |
 
-## 啟動流程
+---
 
-後端入口是 `main.py`：
+## 2. 啟動流程
 
 ```text
 uvicorn main:app
 ```
 
-啟動時流程：
+`BackendApplication.__init__` 順序：
 
-1. `BackendApplication` 建立 FastAPI app。
-2. 建立服務物件：
-   - `SchemaService`
-   - `SessionStore`
-   - `PasswordService`
-   - `AuthDependencies`
-   - `LookupService`
-   - `UserService`
-   - `AttractionService`
-   - `ItineraryService`
-3. 設定 CORS。
-4. 設定 HTTP exception handler，讓錯誤格式統一回傳 `{ "message": ... }`。
+1. 建立 `FastAPI()` 物件。
+2. 建立服務物件：`SchemaService` / `SessionStore` / `PasswordService` / `AuthDependencies` / `LookupService` / `UserService` / `AttractionService` / `ItineraryService`。
+3. 設定 CORS（允許 `http://localhost:5173`、`http://localhost:3000`）。
+4. 設定 HTTP exception handler，統一將錯誤包成 `{ "message": ... }`。
 5. 透過 `create_router(...)` 掛載所有 API。
-6. startup 時執行：
-   - `SchemaService.ensure()`：檢查資料表結構，不符合時套用 `schema.sql`。
-   - `UserService.seed_defaults()`：如果 users 是空的，建立預設測試帳號與管理員帳號。
-   - `AttractionService.refresh()`：從資料庫讀取景點並建立記憶體快取。
+6. 註冊 startup event。
 
-## 分層責任
+Startup 時依序執行：
 
-### `main.py`
+| 步驟 | 動作 |
+|---|---|
+| 1 | `SchemaService.ensure()` — 用 SQLAlchemy `inspect` 檢查表/欄位是否符合預期；不符合就跑 `schema.sql` 重建。 |
+| 2 | `UserService.seed_defaults()` — `Users` 為空時補上 `test@test.com` 與 `admin@test.com` 兩個帳號。 |
 
-`main.py` 不直接處理資料庫 CRUD，也不寫大量 API 邏輯。
+景點 seed (`data_setting.sql`) **不會被 Python 自動載入**，需手動執行。
 
-主要類別：
+---
+
+## 3. 分層責任
+
+### 3.1 `main.py`
+
+只負責組裝，不寫 DB CRUD 也不放業務邏輯。
 
 | 類別 | 功能 |
 |---|---|
-| `BackendApplication` | 組裝整個後端 app。 |
+| `BackendApplication` | 建立 FastAPI app、初始化所有 service、設定 middleware/exception handler、定義 startup hook。 |
 
-主要責任：
+模組末端透過 `application = BackendApplication()` 與 `app = application.app` 對接 uvicorn。
 
-- 建立 `FastAPI()`。
-- 設定 CORS。
-- 設定例外處理。
-- 建立各個 service。
-- 掛載 `routes.py` 建立的 router。
-- 定義 startup 初始化流程。
+### 3.2 `routes.py`
 
-### `routes.py`
-
-`routes.py` 是 API 層，只負責 HTTP 介面。
-
-主要函式：
+API 層；不直接寫 SQL、不處理密碼雜湊。
 
 | 函式 | 功能 |
 |---|---|
-| `create_router(...)` | 建立並回傳 FastAPI `APIRouter`。 |
+| `create_router(auth, users, attractions, itineraries)` | 組裝並回傳 `APIRouter`。 |
 
 路由分組：
 
@@ -83,121 +77,107 @@ uvicorn main:app
 | 認證 | `POST /login`、`POST /register` |
 | 個人帳號 | `GET /me`、`PATCH /me`、`PUT /me/password`、`DELETE /me` |
 | 景點 | `GET /attractions`、`GET /attractions/{id}`、`POST /attractions`、`PUT /attractions/{id}`、`DELETE /attractions/{id}` |
-| 行程 | `GET /itineraries`、`GET /itineraries/trash`、`GET /itineraries/current`、`POST /itineraries`、`PATCH /itineraries/{id}`、`DELETE /itineraries/{id}` |
+| 行程 | `GET /itineraries`、`GET /itineraries/trash`、`GET /itineraries/current`、`POST /itineraries`、`PATCH /itineraries/{id}`、`DELETE /itineraries/{id}`、`DELETE /itineraries/{id}/permanent`、`POST /itineraries/{id}/restore` |
 | 行程項目 | `PUT /itineraries/{id}/items`、`POST /itineraries/{id}/items`、`PATCH /itineraries/{id}/items/{item_id}`、`DELETE /itineraries/{id}/items/{item_id}` |
-| 後台使用者 | `GET /admin/users`、`DELETE /admin/users/{user_id}` |
+| 後台 | `GET /admin/users`、`DELETE /admin/users/{user_id}` |
 
-路由層原則：
-
-- 不直接寫複雜 SQL。
-- 不直接處理密碼雜湊。
-- 不直接維護景點快取。
-- 只呼叫 service，並把結果包成 `{ "data": ... }`。
-
-### `services.py`
-
-`services.py` 是主要商業邏輯層。
+### 3.3 `services.py`
 
 #### `SchemaService`
 
-負責檢查資料庫 schema 是否符合目前後端需求。
+啟動時透過 `database.get_tables()` / `database.get_columns()` 比對 `information_schema`。檢查項目：
 
-功能：
+- 6 張必要表是否齊全（`Users` / `Categories` / `Cities` / `Attractions` / `Itineraries` / `ItineraryItems`）。
+- `Users` 是否有 `Role` 欄位。
+- `Attractions` 欄位集合是否等於白名單。
+- `ItineraryItems` 是否有 `DayIndex`、`Itineraries` 是否不再有歷史 `IsAi`。
+- 是否殘留舊表（`user_roles` / `towns` / `tags` / `attraction_tags` / `attraction_descriptions` / `user_favorites` / `user_visited`，全為 snake_case 留存）。
 
-- 檢查必要資料表是否存在。
-- 檢查 `users` 是否有 `role` 欄位。
-- 檢查 `attractions` 欄位是否符合目前 3NF 版本。
-- 檢查舊表是否已移除。
-- 若 schema 不符合，執行 `schema.sql`。
+任一項不符 → 透過 `database.apply_schema_file('schema.sql')` 重建。
 
 #### `LookupService`
 
-負責處理查找表：
+支援 categories / cities 的「查無則建」邏輯，由 `AttractionService.create/update` 在同一 session 內呼叫。
 
-- `categories`
-- `cities`
-
-功能：
-
-- 根據分類名稱取得 `category_id`。
-- 根據城市名稱取得 `city_id`。
-- 若名稱不存在，會自動 `INSERT IGNORE` 建立資料。
+| 方法 | 功能 |
+|---|---|
+| `category_id(session, name)` | 用 `mysql_insert(Category).prefix_with("IGNORE")` 寫入，再 `select` 取回 `CategoryId`。 |
+| `city_id(session, name)` | 先 `norm_city()` 把「臺」轉「台」，再做相同流程拿 `CityId`。 |
 
 #### `UserService`
 
-負責使用者與帳號相關邏輯。
-
-功能：
-
-- 建立預設帳號。
-- 登入。
-- 註冊。
-- 更新個人資料。
-- 修改密碼。
-- 刪除自己帳號。
-- 後台列出使用者。
-- 後台刪除一般使用者。
-
-使用到：
-
-- `PasswordService`：密碼 hash/verify。
-- `SessionStore`：建立與移除 token session。
+| 方法 | 功能 |
+|---|---|
+| `seed_defaults()` | `Users` 為空時用 ORM `add_all` 補預設兩帳號。 |
+| `login(email, password)` | `select(User)` 取資料、`PasswordService.verify`、`update(User)` 寫 `LoginTime=NOW()`、`SessionStore.create` 發 token。 |
+| `register(body)` | Email 重複檢查 → `add(User)` → `flush()` 取得 `user_id` → 建 session。 |
+| `update_profile(body, current_user, token)` | 動態組欄位 `update(User).values(...)`；變更 name / email 同步寫回記憶體 session。 |
+| `change_password(body, current_user)` | 比對舊密碼後 `update(User)` 寫新雜湊。 |
+| `delete_account(user_id)` | `delete(User)` + 移除該 user 所有 session。 |
+| `list_users()` | `select(User.user_id, ...) order_by(UserId)` 後序列化 datetime 為 ISO 字串。 |
+| `delete_user(user_id)` | 拒絕刪 admin、否則 `delete(User)`。 |
 
 #### `AttractionService`
 
-負責景點資料。
+景點查詢全部在 SQL 端完成，**不維護任何 Python 端快取**。
 
-功能：
+| 方法 | 功能 |
+|---|---|
+| `list(q, cities, category, sort, page, page_size)` | 動態組 `select(Attraction, Category.Name, City.Name)` + `outerjoin`，依參數加 `where`、`order_by`、`limit/offset`。分頁時跑獨立 `COUNT(*) FROM subquery`。 |
+| `get(attraction_id)` | 同樣 outerjoin Categories / Cities 撈一筆。 |
+| `create(body)` | 從 location 抓 city fallback → `insert(Attraction).values(..., SourceUpdatedAt=func.now())` → 再 `get()` 回讀。 |
+| `update(id, body)` | 確認存在 → `update(Attraction).values(..., SourceUpdatedAt=func.now())` → 再 `get()` 回讀。 |
+| `delete(id)` | `update(...).values(IsDeleted=True)` 軟刪除。 |
 
-- 從資料庫載入景點並建立快取。
-- 回傳景點列表。
-- 根據關鍵字、城市、分類、排序、分頁篩選景點。
-- 取得單一景點。
-- 後台新增景點。
-- 後台更新景點。
-- 後台軟刪除景點。
+排序鍵：
 
-快取資料：
-
-```text
-items      -> 景點列表
-item_map   -> attraction_id 對應 items index
-```
-
-這樣 `GET /attractions/{id}` 可以快速取得景點。
+| sort | ORDER BY |
+|---|---|
+| `ns`（由北到南） | `Lat IS NULL, Lat DESC, AttractionId` |
+| `sn`（由南到北） | `Lat IS NULL, Lat ASC, AttractionId` |
+| `updated` | `SourceUpdatedAt IS NULL, SourceUpdatedAt DESC, AttractionId` |
+| `rating` | `Rating IS NULL, Rating DESC, AttractionId` |
+| 預設 | `AttractionId` |
 
 #### `ItineraryService`
 
-負責行程與行程項目。
+| 方法 | 功能 |
+|---|---|
+| `list_active(user_id)` | 撈使用者未刪行程，逐筆呼叫 `_load_items_for_itinerary` 撈 items（JOIN Attractions / Categories）。 |
+| `list_trash(user_id)` | 撈使用者已刪行程。 |
+| `current(user_id)` | 取最近一筆未刪行程及其 items。 |
+| `create(body, user_id)` | `add(Itinerary)` 插入。 |
+| `update(id, body, user_id)` | 擁有權檢查後動態 `update(Itinerary).values(...)`。 |
+| `hard_delete` / `soft_delete` / `restore` | 永久刪除 / 軟刪除 / 還原。 |
+| `replace_items(id, body, user_id)` | `delete(ItineraryItem)` 清空 → `session.execute(insert(ItineraryItem), payload)` 一次批次寫入。 |
+| `add_item(id, body, user_id)` | 用 `func.coalesce(func.max(OrderIndex), -1) + 1` 算下一筆順序，再 `add(ItineraryItem)`。 |
+| `remove_item` | `delete(ItineraryItem).where(...)`。 |
+| `update_item` | 動態組欄位 `update(ItineraryItem).values(...)`。 |
 
-功能：
+所有 itinerary 操作都先 `_ensure_owned(session, itin_id, user_id)` 確認屬於目前登入者。
 
-- 查詢使用者一般行程。
-- 查詢垃圾桶行程。
-- 查詢目前行程。
-- 建立行程。
-- 更新行程標題、開始日期、天數。
-- 軟刪除行程。
-- 還原行程。
-- 永久刪除行程。
-- 新增行程項目。
-- 整批覆蓋行程項目。
-- 修改行程項目時間、備註、日期、排序。
-- 刪除行程項目。
+### 3.4 `models.py`
 
-權限原則：
+SQLAlchemy 2.0 Declarative，6 個 model：
 
-- 所有行程操作都會確認 `itinerary.user_id` 是否等於目前登入使用者。
+| Class | `__tablename__` | 主要欄位（Python attr → DB column） |
+|---|---|---|
+| `User` | `Users` | `user_id`→`UserId`、`email`→`Email`、`password_hash`→`PasswordHash`、`name`→`Name`、`role`→`Role`、`create_time`→`CreateTime`、`login_time`→`LoginTime` |
+| `Category` | `Categories` | `category_id`→`CategoryId`、`name`→`Name` |
+| `City` | `Cities` | `city_id`→`CityId`、`name`→`Name` |
+| `Attraction` | `Attractions` | `attraction_id`→`AttractionId`、`name`→`Name`、`category_id`→`CategoryId`、`city_id`→`CityId`、`address`→`Address`、`lat`→`Lat`、`lon`→`Lon`、`image_url`→`ImageUrl`、`description`→`Description`、`opening_hours`→`OpeningHours`、`ticket_info`→`TicketInfo`、`website_url`→`WebsiteUrl`、`rating`→`Rating`、`phone`→`Phone`、`source_updated_at`→`SourceUpdatedAt`、`is_deleted`→`IsDeleted`、`created_at`→`CreatedAt`、`updated_at`→`UpdatedAt` |
+| `Itinerary` | `Itineraries` | `itinerary_id`→`ItineraryId`、`user_id`→`UserId`、`title`→`Title`、`start_date`→`StartDate`、`num_days`→`NumDays`、`is_deleted`→`IsDeleted`、`created_at`→`CreatedAt`、`updated_at`→`UpdatedAt` |
+| `ItineraryItem` | `ItineraryItems` | `item_id`→`ItemId`、`itinerary_id`→`ItineraryId`、`attraction_id`→`AttractionId`、`day_index`→`DayIndex`、`start_time`→`StartTime`、`end_time`→`EndTime`、`note`→`Note`、`order_index`→`OrderIndex`、`created_at`→`CreatedAt`、`updated_at`→`UpdatedAt` |
 
-### `schemas.py`
+Python attribute 維持 PEP 8 snake_case；DB 欄位走 PascalCase。每個 `mapped_column()` 的第一個位置引數即 DB 欄位名。
 
-集中放 request body 的 Pydantic models。
+### 3.5 `schemas.py`
 
 | Model | 用途 |
 |---|---|
 | `LoginBody` | 登入。 |
 | `RegisterBody` | 註冊。 |
-| `UpdateProfileBody` | 修改姓名或 email。 |
+| `UpdateProfileBody` | 修改 name / email。 |
 | `ChangePasswordBody` | 修改密碼。 |
 | `CreateItineraryBody` | 建立行程。 |
 | `UpdateItineraryBody` | 更新行程。 |
@@ -207,178 +187,191 @@ item_map   -> attraction_id 對應 items index
 | `UpdateItemBody` | 修改行程項目。 |
 | `AttractionBody` | 後台新增/修改景點。 |
 
-### `auth.py`
-
-負責認證與 session。
+### 3.6 `auth.py`
 
 #### `PasswordService`
-
-功能：
-
-- `hash(password)`：使用 bcrypt 產生密碼雜湊。
-- `verify(password, hashed)`：驗證密碼。
+- `hash(password)`：bcrypt 雜湊。
+- `verify(password, hashed)`：bcrypt 驗證。
 
 #### `SessionStore`
 
-目前使用記憶體保存 token。
+純記憶體 dict（後端重啟所有 token 失效）。
 
-功能：
-
-- 建立 token。
-- 透過 token 取得使用者。
-- 更新 session 中的使用者資訊。
-- 使用者刪除時移除相關 session。
-
-注意：
-
-```text
-SessionStore 是記憶體型 session。
-後端重啟後，所有登入 token 會失效。
-```
+- `create(user)`：發 UUID token。
+- `get(token)`：取 user dict。
+- `update_user(token, **fields)`：同步 profile 異動。
+- `remove_user_sessions(user_id)`：刪 user 時清光該 user 的 token。
 
 #### `AuthDependencies`
+- `current_user`：必須登入，否則 401。
+- `optional_user`：可登可不登。
+- `require_admin(current_user)`：role 必須是 admin。
 
-提供 FastAPI dependency：
+### 3.7 `database.py`
 
-- `current_user`：必須登入。
-- `optional_user`：可登入可不登入。
-- `require_admin`：檢查目前使用者是否為 admin。
-
-### `database.py`
-
-負責 MariaDB 存取。
-
-#### `DatabaseClient`
-
-主要方法：
-
-| 方法 | 功能 |
+| 物件 / 函式 | 功能 |
 |---|---|
-| `query(sql, params)` | 執行 SELECT，回傳多筆 dict。 |
-| `query_one(sql, params)` | 執行 SELECT，回傳第一筆或 `None`。 |
-| `execute(sql, params)` | 執行 INSERT/UPDATE/DELETE，回傳 lastrowid。 |
-| `execute_many(sql, params_list)` | 批次執行相同 SQL。 |
-| `schema_ready(required_tables)` | 檢查必要資料表是否存在。 |
-| `apply_schema_file(path)` | 執行 `schema.sql`。 |
+| `engine` | 綁定 `TravelDB` 的 SQLAlchemy engine。 |
+| `server_engine` | 不指定 database 的 engine，給 schema bootstrap 用。 |
+| `SessionLocal` | `sessionmaker` 工廠。 |
+| `session_scope()` | context manager；成功 commit、失敗 rollback、結束 close。 |
+| `schema_ready(required_tables)` | 透過 `inspect()` 確認必要表是否齊。 |
+| `get_tables()` | 回傳 DB 內所有表名（小寫化以兼容 Windows MariaDB `lower_case_table_names=1`）。 |
+| `get_columns(table)` | 回傳該表欄位名集合（先試原名，失敗時用小寫再試）。 |
+| `apply_schema_file(path)` | 讀 `.sql` 檔、用 `_split_sql_script` 切句、透過 `server_engine` 逐條 execute。 |
+| `_split_sql_script(script)` | 簡易切句器：跳過空行與 `--` 註解，遇 `;` 即視為一句結束。 |
 
-為了相容既有程式，檔案底部仍保留：
+ORM 走 `session_scope()`，每個 service 方法各自開一份 session，做完就 commit/close。
 
-```python
-query(...)
-query_one(...)
-execute(...)
-execute_many(...)
-schema_ready(...)
-apply_schema_file(...)
-```
-
-這些函式會委派給 `default_client`。
-
-### `utils.py`
-
-共用工具。
+### 3.8 `utils.py`
 
 | 函式 / 常數 | 功能 |
 |---|---|
-| `CITY_NS_ORDER` | 城市由北到南排序用。 |
-| `norm_city(value)` | 將 `臺` 正規化成 `台`。 |
-| `split_location(location)` | 從地址開頭推測城市。 |
-| `json_text(value)` | 將 dict 轉成 JSON 字串，或保留字串。 |
-| `fmt_time(value)` | 將資料庫 TIME 轉成前端需要的 `HH:MM`。 |
+| `CITY_NS_ORDER` | 北→南縣市順序常數（給 `split_location` 比對用，不再用於排序）。 |
+| `norm_city(value)` | `"臺" → "台"` 正規化。 |
+| `split_location(location)` | 從地址開頭推測縣市。 |
+| `json_text(value)` | dict 轉 JSON 字串，str 原樣返回，None 保留。 |
+| `fmt_time(value)` | 將 `time` / 字串 / `timedelta` 轉成 `HH:MM`。 |
 
-## 資料流範例
+---
 
-### 登入流程
+## 4. 資料流範例
+
+### 4.1 登入
 
 ```text
 POST /login
-  -> routes.py login()
+  -> routes.login()
   -> UserService.login()
-  -> database.query_one("SELECT * FROM users ...")
-  -> PasswordService.verify()
-  -> SessionStore.create()
-  -> 回傳 token
+       session_scope():
+         select(User) WHERE Email = ?      # 參數化 SQL
+         PasswordService.verify(...)
+         update(User) SET LoginTime = NOW() WHERE UserId = ?
+       SessionStore.create({id, email, name, role})
+  -> 回傳 { "data": { "token": "<uuid>" } }
 ```
 
-### 查詢景點列表
+### 4.2 景點列表（含過濾／排序／分頁）
 
 ```text
-GET /attractions
-  -> routes.py list_attractions()
-  -> AttractionService.list()
-  -> 使用啟動時載入的景點快取
-  -> 依 q / cities / category / sort / page 過濾
-  -> 回傳列表或分頁結果
+GET /attractions?q=湖&cities=台北市,新北市&sort=ns&page=1&page_size=10
+  -> routes.list_attractions()
+  -> AttractionService.list(...)
+       session_scope():
+         SELECT a.*, cat.Name, c.Name
+         FROM Attractions a
+           LEFT JOIN Categories cat ON a.CategoryId = cat.CategoryId
+           LEFT JOIN Cities c       ON a.CityId     = c.CityId
+         WHERE a.IsDeleted = FALSE
+           AND (a.Name LIKE ? OR a.Address LIKE ?)
+           AND c.Name IN (?, ?)
+         ORDER BY a.Lat IS NULL, a.Lat DESC, a.AttractionId
+         LIMIT 10 OFFSET 0
+       同時跑 SELECT COUNT(*) FROM (...) 取得 total
+  -> 回傳 { "data": { "items": [...], "total": N } }
 ```
 
-### 新增景點
+### 4.3 新增景點
 
 ```text
-POST /attractions
-  -> routes.py create_attraction()
+POST /attractions  (Bearer admin token)
+  -> routes.create_attraction()
   -> AuthDependencies.require_admin()
-  -> AttractionService.create()
-  -> LookupService.category_id()
-  -> LookupService.city_id()
-  -> INSERT INTO attractions
-  -> AttractionService.refresh()
-  -> 回傳新增後景點
+  -> AttractionService.create(body)
+       session_scope():
+         LookupService.category_id(session, body.category)
+           # INSERT IGNORE INTO Categories (Name) VALUES (?)
+           # SELECT CategoryId FROM Categories WHERE Name = ?
+         LookupService.city_id(session, city_after_norm)
+           # 同上，對 Cities
+         INSERT INTO Attractions (...) VALUES (..., NOW())
+       AttractionService.get(new_id)   # 開新 session 回讀
+  -> 回傳新景點 dict
 ```
 
-### 建立行程
+### 4.4 建立行程 + 批次覆蓋 items
 
 ```text
-POST /itineraries
-  -> routes.py create_itinerary()
-  -> AuthDependencies.current_user
-  -> ItineraryService.create()
-  -> INSERT INTO itineraries
-  -> 回傳新行程
+POST /itineraries           -> ItineraryService.create
+PUT  /itineraries/{id}/items
+  -> ItineraryService.replace_items()
+       session_scope():
+         _ensure_owned(session, itin_id, user_id)
+         DELETE FROM ItineraryItems WHERE ItineraryId = ?
+         INSERT INTO ItineraryItems (...) VALUES (...), (...), ...   # executemany
 ```
 
-## 資料庫與資料匯入
+---
 
-### `schema.sql`
+## 5. SQL 檔與資料匯入
 
-用來建立資料庫結構。包含：
+### 5.1 `schema.sql`
 
-- `users`
-- `categories`
-- `cities`
-- `attractions`
-- `itineraries`
-- `itinerary_items`
+- 建立 `TravelDB`、6 張 PascalCase 表。
+- 開頭含 `DROP TABLE IF EXISTS`：當前 6 張表 PascalCase，歷史遺留表保留 snake_case 以兼容舊安裝。
 
-### `data_setting.sql`
-
-用來匯入景點資料。
+### 5.2 `data_setting.sql`
 
 匯入流程：
 
-1. 清空景點相關表。
-2. 重設 `categories`、`cities` 的 auto increment。
-3. 匯入分類。
-4. 匯入城市。
-5. 匯入景點。
+1. `USE TravelDB; SET NAMES utf8mb4;`
+2. `SET FOREIGN_KEY_CHECKS = 0;` → `TRUNCATE` 4 張：`ItineraryItems` / `Attractions` / `Categories` / `Cities` → `SET FOREIGN_KEY_CHECKS = 1;`
+3. `INSERT IGNORE INTO Categories (Name) VALUES ...`
+4. `INSERT IGNORE INTO Cities (Name) VALUES ...`
+5. 多筆 `INSERT INTO Attractions ... ON DUPLICATE KEY UPDATE ...` 寫入景點。
 
-正確執行方式：
+執行方式（Windows MariaDB CLI）：
 
 ```powershell
-backend\mariadb-12.3.2-winx64\bin\mariadb.exe --ssl=0 --default-character-set=utf8mb4 -h localhost -P 3306 -u root -e "SOURCE C:/Users/Aya/Desktop/web_travel/travel_web/backend/data_setting.sql;"
+backend\mariadb-12.3.2-winx64\bin\mariadb.exe --ssl=0 --default-character-set=utf8mb4 -h localhost -P 3306 -u root -e "SOURCE C:/Users/Aya/Desktop/gittest/travel_web/backend/data_setting.sql;"
 ```
 
-不要使用 PowerShell 管線 `Get-Content ... | mariadb` 匯入中文 SQL，否則中文可能變成 `?`。
+> 不要用 PowerShell 管線 `Get-Content ... | mariadb` 匯入，中文會變 `?`。
 
-## 維護原則
+---
 
-- 新增 API route：優先放在 `routes.py`。
-- 新增 request body：放在 `schemas.py`。
-- 新增商業邏輯：放在 `services.py`，不要塞回 `main.py`。
-- 新增共用小工具：放在 `utils.py`。
-- 新增資料庫查詢 helper：優先考慮 service 內部方法；只有通用 DB 能力才放 `database.py`。
-- 不要讓後端 Python 直接讀 `attraction_dt.json`；景點資料匯入由 SQL 檔負責。
+## 6. 維護原則
 
-## 後端程式架構圖
+- 新增 API：放 `routes.py`，內部委派 service。
+- 新增 request body：放 `schemas.py`。
+- 新增業務邏輯：放對應的 `*Service`。
+- 新增 ORM 對應：放 `models.py`；DB 欄位用 PascalCase、Python 屬性用 snake_case。
+- 新增共用 helper：放 `utils.py`。
+- 不要讓 `database.py` 反向 import service / route。
+- 不要在 service 寫 raw SQL 字串（schema bootstrap 例外，由 `apply_schema_file` 集中處理）。
+- 不要讓後端 Python 直接讀 `attraction_dt.json`。
+
+---
+
+## 7. 模組依賴方向
+
+```text
+main.py
+  └── routes.py
+        ├── schemas.py
+        ├── auth.py
+        └── services.py
+              ├── models.py
+              ├── database.py
+              ├── auth.py
+              ├── schemas.py
+              └── utils.py
+                            (database.py → MariaDB)
+```
+
+低層不可 import 高層；`database.py` 與 `models.py` 不知道 service 與 route 存在。
+
+---
+
+## 8. Prepared Statement / ORM 說明
+
+- **ORM**：全面使用 SQLAlchemy 2.0。Service 層內所有 DB 操作都是 `select(...)` / `update(...)` / `delete(...)` / `insert(...)` 表達式，無手寫 SQL 字串（schema bootstrap 例外）。
+- **Prepared Statement（語意層）**：所有使用者輸入透過 SQLAlchemy bind parameter 傳遞，杜絕 SQL injection。SQLAlchemy 的 compiled statement cache 也能避免重複 SQL 編譯成本。
+- **Server-side `COM_STMT_PREPARE`**：目前底層 driver `pymysql` 仍走 client-side substitution。若要升級為真正的 server-side prepared statement，可把 engine URL 改為 `mysql+mysqlconnector` 並開 `connect_args={"prepared": True}`，service 層無需改動。
+
+---
+
+## 9. 模組架構圖
 
 ```mermaid
 flowchart TD
@@ -387,15 +380,14 @@ flowchart TD
     subgraph App["main.py"]
         API
         AppFactory[BackendApplication]
-        Startup[startup 初始化]
+        Startup[startup hook]
     end
 
     AppFactory --> Routes[routes.py<br/>create_router]
-    Startup --> SchemaService[SchemaService<br/>檢查 schema / 套用 schema.sql]
-    Startup --> UserSeed[UserService<br/>建立預設帳號]
-    Startup --> AttractionCache[AttractionService.refresh<br/>載入景點快取]
+    Startup --> SchemaSvc[SchemaService.ensure<br/>檢查 schema / 套用 schema.sql]
+    Startup --> Seed[UserService.seed_defaults<br/>建立預設帳號]
 
-    subgraph RouteLayer["API 路由層"]
+    subgraph RouteLayer["API 路由"]
         Routes --> AuthRoutes[登入 / 註冊 / me]
         Routes --> AttractionRoutes[景點 API]
         Routes --> ItineraryRoutes[行程 API]
@@ -403,113 +395,172 @@ flowchart TD
     end
 
     subgraph AuthLayer["auth.py"]
-        AuthDeps[AuthDependencies<br/>current_user / optional_user / require_admin]
-        PasswordService[PasswordService<br/>bcrypt hash / verify]
-        SessionStore[SessionStore<br/>記憶體 token session]
+        AuthDeps[AuthDependencies]
+        PasswordSvc[PasswordService<br/>bcrypt]
+        SessionStore[SessionStore<br/>記憶體 token]
     end
 
     subgraph ServiceLayer["services.py"]
-        UserService[UserService<br/>使用者與帳號邏輯]
-        AttractionService[AttractionService<br/>景點查詢 / 新增 / 修改 / 刪除]
-        ItineraryService[ItineraryService<br/>行程與行程項目 CRUD]
-        LookupService[LookupService<br/>categories / cities 查找表]
-        SchemaService
+        UserSvc[UserService]
+        AttractionSvc[AttractionService]
+        ItinerarySvc[ItineraryService]
+        LookupSvc[LookupService]
+        SchemaSvc
     end
 
-    subgraph ModelUtility["schemas.py / utils.py"]
-        Schemas[schemas.py<br/>Pydantic request models]
-        Utils[utils.py<br/>城市正規化 / JSON 文字 / 時間格式]
+    subgraph ModelsLayer["models.py"]
+        UserM[User]
+        CatM[Category]
+        CityM[City]
+        AttrM[Attraction]
+        ItinM[Itinerary]
+        ItemM[ItineraryItem]
     end
 
     subgraph DataLayer["database.py"]
-        DBClient[DatabaseClient]
-        Query[query / query_one]
-        Execute[execute / execute_many]
-        SchemaOps[schema_ready / apply_schema_file]
+        Engine[engine + SessionLocal]
+        ServerEngine[server_engine]
+        Scope[session_scope]
+        Inspect[get_tables / get_columns]
+        ApplySQL[apply_schema_file]
     end
 
-    subgraph MariaDB["MariaDB travel_web"]
-        Users[(users)]
-        Categories[(categories)]
-        Cities[(cities)]
-        Attractions[(attractions)]
-        Itineraries[(itineraries)]
-        Items[(itinerary_items)]
+    subgraph MariaDB["MariaDB · TravelDB"]
+        T_Users[(Users)]
+        T_Cat[(Categories)]
+        T_City[(Cities)]
+        T_Attr[(Attractions)]
+        T_Itin[(Itineraries)]
+        T_Item[(ItineraryItems)]
     end
 
-    AuthRoutes --> UserService
-    AttractionRoutes --> AttractionService
-    ItineraryRoutes --> ItineraryService
-    AdminRoutes --> UserService
-    AdminRoutes --> AttractionService
+    AuthRoutes --> UserSvc
+    AttractionRoutes --> AttractionSvc
+    ItineraryRoutes --> ItinerarySvc
+    AdminRoutes --> UserSvc
+    AdminRoutes --> AttractionSvc
 
     Routes --> AuthDeps
-    UserService --> PasswordService
-    UserService --> SessionStore
-    AttractionService --> LookupService
-    AttractionService --> Utils
-    ItineraryService --> Utils
-    Routes --> Schemas
+    UserSvc --> PasswordSvc
+    UserSvc --> SessionStore
+    AttractionSvc --> LookupSvc
+    AttractionSvc -.uses.-> Utils[utils.py]
+    ItinerarySvc -.uses.-> Utils
 
-    UserService --> Query
-    UserService --> Execute
-    AttractionService --> Query
-    AttractionService --> Execute
-    ItineraryService --> Query
-    ItineraryService --> Execute
-    LookupService --> Query
-    LookupService --> Execute
-    SchemaService --> SchemaOps
+    UserSvc --> Scope
+    AttractionSvc --> Scope
+    ItinerarySvc --> Scope
+    LookupSvc --> Scope
+    SchemaSvc --> Inspect
+    SchemaSvc --> ApplySQL
 
-    DBClient --> Query
-    DBClient --> Execute
-    DBClient --> SchemaOps
+    Scope --> Engine
+    ApplySQL --> ServerEngine
 
-    Query --> Users
-    Query --> Categories
-    Query --> Cities
-    Query --> Attractions
-    Query --> Itineraries
-    Query --> Items
-    Execute --> Users
-    Execute --> Categories
-    Execute --> Cities
-    Execute --> Attractions
-    Execute --> Itineraries
-    Execute --> Items
+    ServiceLayer -.queries via.-> ModelsLayer
+    ModelsLayer --> T_Users
+    ModelsLayer --> T_Cat
+    ModelsLayer --> T_City
+    ModelsLayer --> T_Attr
+    ModelsLayer --> T_Itin
+    ModelsLayer --> T_Item
 ```
 
-## 後端模組依賴方向
+---
 
-```text
-main.py
-  -> routes.py
-  -> services.py
-  -> auth.py
+## 10. 資料庫關聯圖（烏鴉腳）
 
-routes.py
-  -> schemas.py
-  -> services.py
-  -> auth.py
+```mermaid
+erDiagram
+    Users ||--o{ Itineraries : "建立"
+    Itineraries ||--o{ ItineraryItems : "包含"
+    Attractions ||--o{ ItineraryItems : "被引用"
+    Categories |o--o{ Attractions : "分類"
+    Cities |o--o{ Attractions : "歸屬"
 
-services.py
-  -> database.py
-  -> schemas.py
-  -> auth.py
-  -> utils.py
+    Users {
+        INT UserId PK
+        VARCHAR Email UK
+        VARCHAR PasswordHash
+        VARCHAR Name
+        VARCHAR Role
+        DATETIME CreateTime
+        DATETIME LoginTime
+    }
 
-database.py
-  -> MariaDB
+    Categories {
+        INT CategoryId PK
+        VARCHAR Name UK
+    }
+
+    Cities {
+        INT CityId PK
+        VARCHAR Name UK
+    }
+
+    Attractions {
+        VARCHAR AttractionId PK
+        VARCHAR Name
+        INT CategoryId FK
+        INT CityId FK
+        VARCHAR Address
+        DECIMAL Lat
+        DECIMAL Lon
+        TEXT ImageUrl
+        TEXT Description
+        TEXT OpeningHours
+        TEXT TicketInfo
+        TEXT WebsiteUrl
+        DECIMAL Rating
+        VARCHAR Phone
+        DATETIME SourceUpdatedAt
+        BOOLEAN IsDeleted
+        DATETIME CreatedAt
+        DATETIME UpdatedAt
+    }
+
+    Itineraries {
+        VARCHAR ItineraryId PK
+        INT UserId FK
+        VARCHAR Title
+        DATE StartDate
+        TINYINT NumDays
+        BOOLEAN IsDeleted
+        DATETIME CreatedAt
+        DATETIME UpdatedAt
+    }
+
+    ItineraryItems {
+        VARCHAR ItemId PK
+        VARCHAR ItineraryId FK
+        VARCHAR AttractionId FK
+        TINYINT DayIndex
+        TIME StartTime
+        TIME EndTime
+        TEXT Note
+        INT OrderIndex
+        DATETIME CreatedAt
+        DATETIME UpdatedAt
+    }
 ```
 
-依賴方向原則：
+**關係與級聯行為**：
 
-```text
-入口層 main.py
-  -> 路由層 routes.py
-  -> 服務層 services.py
-  -> 資料庫層 database.py
-  -> MariaDB
-```
+| 關係 | 基數 | FK 來源 | ON DELETE | ON UPDATE | 意義 |
+|---|---|---|---|---|---|
+| `Users (1) → Itineraries (0..N)` | 一對多 | `Itineraries.UserId` | CASCADE | CASCADE | 刪除使用者連同行程一併刪除。 |
+| `Itineraries (1) → ItineraryItems (0..N)` | 一對多 | `ItineraryItems.ItineraryId` | CASCADE | CASCADE | 刪除行程連同 items 一併刪除。 |
+| `Attractions (1) → ItineraryItems (0..N)` | 一對多 | `ItineraryItems.AttractionId` | RESTRICT | CASCADE | 景點被行程引用時禁止刪除，避免行程指向不存在的景點。 |
+| `Categories (0..1) → Attractions (0..N)` | 弱一對多 | `Attractions.CategoryId`（可為 NULL） | SET NULL | CASCADE | 刪除分類時，相關景點 CategoryId 變 NULL，景點本體保留。 |
+| `Cities (0..1) → Attractions (0..N)` | 弱一對多 | `Attractions.CityId`（可為 NULL） | SET NULL | CASCADE | 刪除城市時，相關景點 CityId 變 NULL，景點本體保留。 |
 
-也就是說，低層不應該反過來 import 高層。例如 `database.py` 不應該 import `routes.py` 或 `main.py`。
+**索引**（schema.sql 內 `INDEX`）：
+
+| 表 | Index | 欄位 |
+|---|---|---|
+| `Users` | `idx_users_role` | `Role` |
+| `Categories` | `idx_categories_name` | `Name` |
+| `Cities` | `idx_cities_name` | `Name` |
+| `Attractions` | `idx_attractions_name` / `idx_attractions_category` / `idx_attractions_city` / `idx_attractions_rating` / `idx_attractions_updated` / `idx_attractions_deleted` | `Name` / `CategoryId` / `CityId` / `Rating` / `SourceUpdatedAt` / `IsDeleted` |
+| `Itineraries` | `idx_itineraries_user_deleted_updated` | `(UserId, IsDeleted, UpdatedAt)` |
+| `ItineraryItems` | `idx_itinerary_items_itinerary_day_order` | `(ItineraryId, DayIndex, OrderIndex)` |
