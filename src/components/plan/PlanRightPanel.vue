@@ -11,8 +11,8 @@
           v-model="store.filterText"
           placeholder="搜尋景點名稱或地區…"
           clearable
-          @input="onFilterChange"
-          @clear="onFilterChange"
+          @input="store.debouncedResetAndSearch"
+          @clear="store.resetAndSearch"
         >
           <template #prefix><i class="fa-solid fa-magnifying-glass"></i></template>
         </el-input>
@@ -21,8 +21,8 @@
           placeholder="篩選類別"
           clearable
           style="width:100%"
-          @change="onFilterChange"
-          @clear="onFilterChange"
+          @change="store.resetAndSearch"
+          @clear="store.resetAndSearch"
         >
           <el-option label="自然景觀"        value="自然景觀" />
           <el-option label="生態觀察與動植物" value="生態觀察與動植物" />
@@ -73,7 +73,7 @@
 </template>
 
 <script setup>
-import { watch, onMounted } from 'vue'
+import { watch } from 'vue'
 import { usePlanStore } from '@/stores/plan'
 import AttractionCard from './AttractionCard.vue'
 
@@ -83,20 +83,9 @@ const TABS = [
   { label: '搜尋景點', value: 'search' },
 ]
 
-// 切換到搜尋 tab 時立即載入第一頁
+// 切換到搜尋 tab 時才載入第一頁（不再 onMounted 預載）
 watch(() => store.rightTab, (tab) => {
   if (tab === 'search' && store.searchResults.length === 0) {
-    store.resetAndSearch()
-  }
-})
-
-function onFilterChange() {
-  store.resetAndSearch()
-}
-
-onMounted(() => {
-  // 預先載入搜尋結果（背景靜默）
-  if (store.searchResults.length === 0) {
     store.resetAndSearch()
   }
 })

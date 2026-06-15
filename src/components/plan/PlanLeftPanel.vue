@@ -44,6 +44,7 @@
 </template>
 
 <script setup>
+import { watch } from 'vue'
 import { usePlanStore } from '@/stores/plan'
 import ItineraryCard from './ItineraryCard.vue'
 
@@ -52,6 +53,11 @@ const TABS = [
   { label: '安排旅遊', value: 'list' },
   { label: '垃圾桶',   value: 'trash' },
 ]
+
+// 切到垃圾桶分頁才載入（首次以後 trashLoaded 會記得，不再重抓）
+watch(() => store.leftTab, (tab) => {
+  if (tab === 'trash') store.fetchTrash()
+})
 </script>
 
 <style scoped>

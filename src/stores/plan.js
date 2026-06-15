@@ -4,8 +4,7 @@ import { getAttractionList, searchAttractions } from '@/api/Attraction'
 import {
   listItineraries, listItinerariesTrash, createItineraryApi,
   updateItineraryApi, deleteItineraryApi, restoreItineraryApi,
-  hardDeleteItineraryApi, putItineraryItemsApi, addItineraryItemApi,
-  removeItineraryItemApi, updateItineraryItemApi,
+  hardDeleteItineraryApi, putItineraryItemsApi,
 } from '@/api/Itinerary'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -46,9 +45,9 @@ function persistItineraryIds(ids) {
   try { localStorage.setItem(ITINERARY_IDS_KEY, JSON.stringify(ids)) } catch {}
 }
 
-// ── debounce timers (module-level, not reactive) ──────────────────────────────
-let _titleTimer = null
-const _itemTimers = {}
+// ── module-level timers (not reactive) ───────────────────────────────────────
+let _searchTimer = null
+let _searchSeq = 0
 
 // ── store ─────────────────────────────────────────────────────────────────────
 export const usePlanStore = defineStore('plan', {
@@ -76,6 +75,7 @@ export const usePlanStore = defineStore('plan', {
 
     isSaving: false,
     isDirty: false,
+    trashLoaded: false,
 
     // drag: attraction → day
     dragAttr: null,
@@ -202,11 +202,7 @@ export const usePlanStore = defineStore('plan', {
     async _syncItems(itin) {
       const target = itin ?? this.activeItinerary
       if (!target) return
-      try {
-        await putItineraryItemsApi(target.id, this._collectItems(target))
-      } catch {
-        ElMessage.error('同步行程失敗，請稍後重試')
-      }
+      await putItineraryItemsApi(target.id, this._collectItems(target))
     },
 
     // ── itinerary management ──────────────────────────────────────────────────
@@ -224,8 +220,12 @@ export const usePlanStore = defineStore('plan', {
       }
     },
 
-    setActive(id) {
+    async setActive(id) {
       if (this.activeId === id) return
+      if (this.isDirty) {
+        await this.saveToBackend()
+        if (this.isDirty) return  // 存檔失敗則放棄切換，停在原本的行程
+      }
       this.activeId  = id
       this.activeDay = 0
       this.isDirty   = false
@@ -234,10 +234,13 @@ export const usePlanStore = defineStore('plan', {
     async softDelete(id) {
       const itin = this.itineraries.find(i => i.id === id)
       if (!itin) return
+      const wasActive = this.activeId === id
       itin.isDeleted = true
-      if (this.activeId === id) {
+      if (wasActive) {
+        // 直接放棄被刪除行程的 dirty 變更
         this.activeId  = this.itineraries.find(i => !i.isDeleted)?.id ?? null
         this.activeDay = 0
+        this.isDirty   = false
       }
       try {
         await deleteItineraryApi(id)
@@ -280,28 +283,13 @@ export const usePlanStore = defineStore('plan', {
       if (!itin) return
       itin.title   = title
       this.isDirty = true
-      const itinId = this.activeId
-      clearTimeout(_titleTimer)
-      _titleTimer = setTimeout(async () => {
-        try {
-          await updateItineraryApi(itinId, { title })
-        } catch {
-          ElMessage.error('更新標題失敗')
-        }
-      }, 600)
     },
 
-    async setStartDate(newDate) {
+    setStartDate(newDate) {
       const itin = this.activeItinerary
       if (!itin) return
       itin.startDate = newDate
       this.isDirty   = true
-      try {
-        await updateItineraryApi(itin.id, { startDate: newDate })
-        await this._syncItems(itin)
-      } catch {
-        ElMessage.error('更新日期失敗')
-      }
     },
 
     // ── day management ────────────────────────────────────────────────────────
@@ -310,38 +298,27 @@ export const usePlanStore = defineStore('plan', {
       this.activeDay = idx
     },
 
-    async addDay() {
+    addDay() {
       const itin = this.activeItinerary
       if (!itin || itin.numDays >= 10) return
       itin.numDays++
       itin.days.push({ items: [] })
       this.activeDay = itin.numDays - 1
       this.isDirty   = true
-      try {
-        await updateItineraryApi(itin.id, { numDays: itin.numDays })
-      } catch {
-        ElMessage.error('新增天數失敗')
-      }
     },
 
-    async removeDay(dayIdx) {
+    removeDay(dayIdx) {
       const itin = this.activeItinerary
       if (!itin || itin.numDays <= 1) return
       itin.days.splice(dayIdx, 1)
       itin.numDays--
       if (this.activeDay >= itin.numDays) this.activeDay = itin.numDays - 1
       this.isDirty = true
-      try {
-        await updateItineraryApi(itin.id, { numDays: itin.numDays })
-        await this._syncItems(itin)
-      } catch {
-        ElMessage.error('移除天數失敗')
-      }
     },
 
     // ── item management ───────────────────────────────────────────────────────
 
-    async addAttrToDay(attr) {
+    addAttrToDay(attr) {
       const itin = this.activeItinerary
       if (!itin || !itin.days[this.activeDay]) return
       const items = itin.days[this.activeDay].items
@@ -356,47 +333,31 @@ export const usePlanStore = defineStore('plan', {
         endTime = `${pad(eh)}:${pad(em)}`
         if (eh === 23 && em + 90 > 59) endTime = '23:00'
       }
-      const newItem = {
+      items.push({
         uid:          uid(),
         attractionId: attr.id,
         name:         attr.name,
         location:     attr.location,
         category:     attr.category || '',
+        imageUrl:     attr.imageUrl,
+        openingHours: attr.openingHours,
+        ticketInfo:   attr.ticketInfo,
+        rating:       attr.rating,
         startTime,
         endTime,
         note: '',
-      }
-      items.push(newItem)
+      })
       this.isDirty = true
-      try {
-        await addItineraryItemApi(itin.id, {
-          uid:          newItem.uid,
-          attractionId: newItem.attractionId,
-          dayIndex:     this.activeDay,
-          startTime:    newItem.startTime,
-          endTime:      newItem.endTime,
-          note:         '',
-        })
-      } catch {
-        items.splice(items.indexOf(newItem), 1)
-        ElMessage.error('新增景點失敗')
-      }
     },
 
-    async removeItem(dayIdx, itemUid) {
+    removeItem(dayIdx, itemUid) {
       const itin = this.activeItinerary
       if (!itin?.days[dayIdx]) return
       const items = itin.days[dayIdx].items
       const idx   = items.findIndex(i => i.uid === itemUid)
       if (idx < 0) return
-      const [removed] = items.splice(idx, 1)
+      items.splice(idx, 1)
       this.isDirty = true
-      try {
-        await removeItineraryItemApi(itin.id, itemUid)
-      } catch {
-        items.splice(idx, 0, removed)
-        ElMessage.error('移除景點失敗')
-      }
     },
 
     setItemField(dayIdx, itemUid, field, value) {
@@ -414,26 +375,9 @@ export const usePlanStore = defineStore('plan', {
           item.endTime = `${pad(Math.min(23, Math.floor(endMin / 60)))}:${pad(endMin % 60)}`
         }
       }
-      const itinId = this.activeId
-      clearTimeout(_itemTimers[itemUid])
-      _itemTimers[itemUid] = setTimeout(async () => {
-        const curItin = this.itineraries.find(i => i.id === itinId)
-        if (!curItin) return
-        const curItem = curItin.days[dayIdx]?.items.find(i => i.uid === itemUid)
-        if (!curItem) return
-        try {
-          await updateItineraryItemApi(itinId, itemUid, {
-            startTime: curItem.startTime,
-            endTime:   curItem.endTime,
-            note:      curItem.note,
-          })
-        } catch {
-          ElMessage.error('更新項目失敗')
-        }
-      }, 600)
     },
 
-    async moveItem(dayIdx, fromUid, toUid) {
+    moveItem(dayIdx, fromUid, toUid) {
       const itin = this.activeItinerary
       if (!itin?.days[dayIdx]) return
       const items = itin.days[dayIdx].items
@@ -443,11 +387,6 @@ export const usePlanStore = defineStore('plan', {
       const [item] = items.splice(fi, 1)
       items.splice(ti, 0, item)
       this.isDirty = true
-      try {
-        await this._syncItems(itin)
-      } catch {
-        ElMessage.error('排序失敗')
-      }
     },
 
     // ── drag: attraction → day ────────────────────────────────────────────────
@@ -504,10 +443,30 @@ export const usePlanStore = defineStore('plan', {
         await this._syncItems(itin)
         this.isDirty = false
         ElMessage.success('行程已儲存！')
-      } catch {
-        ElMessage.error('儲存失敗，請稍後再試')
+      } catch (err) {
+        ElMessage.error(err?.message || '儲存失敗，請稍後再試')
       } finally {
         this.isSaving = false
+      }
+    },
+
+    // 放棄本地未儲存的編輯，從 server 重新拉一份覆蓋當前行程
+    async discardChanges() {
+      const activeId = this.activeId
+      if (!activeId) return
+      try {
+        const res = await listItineraries()
+        const fresh = (res.data ?? []).find(i => i.id === activeId)
+        const itin = this.itineraries.find(i => i.id === activeId)
+        if (fresh && itin) {
+          itin.title     = fresh.title
+          itin.startDate = fresh.startDate
+          itin.numDays   = fresh.numDays
+          itin.days      = fresh.days
+        }
+        this.isDirty = false
+      } catch {
+        ElMessage.error('還原失敗')
       }
     },
 
@@ -521,18 +480,13 @@ export const usePlanStore = defineStore('plan', {
       await this.fetchAttractions()
       // load itineraries from DB (requires auth; request.js will reject if 401)
       this.isLoading = true
+      this.trashLoaded = false
       try {
-        const [activeRes, trashRes] = await Promise.all([
-          listItineraries(),
-          listItinerariesTrash(),
-        ])
-        this.itineraries = [
-          ...(activeRes.data ?? []),
-          ...(trashRes.data ?? []),
-        ]
-        this.activeId  = (activeRes.data ?? [])[0]?.id ?? null
-        this.activeDay = 0
-        this.isDirty   = false
+        const activeRes = await listItineraries()
+        this.itineraries = activeRes.data ?? []
+        this.activeId    = this.itineraries[0]?.id ?? null
+        this.activeDay   = 0
+        this.isDirty     = false
       } catch {
         // 未登入或網路錯誤：保持空行程列表
         this.itineraries = []
@@ -542,9 +496,26 @@ export const usePlanStore = defineStore('plan', {
       }
     },
 
+    async fetchTrash() {
+      if (this.trashLoaded) return
+      try {
+        const res = await listItinerariesTrash()
+        const trash = res.data ?? []
+        // 合併：保留 active，移除舊 trash，加入新 trash
+        this.itineraries = [
+          ...this.itineraries.filter(i => !i.isDeleted),
+          ...trash,
+        ]
+        this.trashLoaded = true
+      } catch {
+        // 靜默失敗，下次切 tab 仍會再試
+      }
+    },
+
     // ── right panel paginated search ─────────────────────────────────────────
 
     async fetchSearchAttractions() {
+      const seq = ++_searchSeq
       this.searchLoading = true
       try {
         const params = {
@@ -554,13 +525,15 @@ export const usePlanStore = defineStore('plan', {
         if (this.filterText)     params.q               = this.filterText
         if (this.selCategory)    params.category        = this.selCategory
         const res = await searchAttractions(params)
+        if (seq !== _searchSeq) return  // 已被更新的搜尋取代，丟棄此回應
         this.searchResults = res.data.items ?? []
         this.searchTotal   = res.data.total  ?? 0
       } catch {
+        if (seq !== _searchSeq) return
         this.searchResults = []
         this.searchTotal   = 0
       } finally {
-        this.searchLoading = false
+        if (seq === _searchSeq) this.searchLoading = false
       }
     },
 
@@ -570,8 +543,14 @@ export const usePlanStore = defineStore('plan', {
     },
 
     resetAndSearch() {
+      clearTimeout(_searchTimer)
       this.searchPage = 1
       this.fetchSearchAttractions()
+    },
+
+    debouncedResetAndSearch() {
+      clearTimeout(_searchTimer)
+      _searchTimer = setTimeout(() => this.resetAndSearch(), 300)
     },
   },
 })

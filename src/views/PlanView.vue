@@ -11,7 +11,7 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, onBeforeUnmount } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { usePlanStore } from '@/stores/plan'
@@ -23,20 +23,51 @@ import PlanRightPanel from '@/components/plan/PlanRightPanel.vue'
 
 const store = usePlanStore()
 
-onMounted(() => store.init())
+function beforeUnloadHandler(e) {
+  if (store.isDirty) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
 
-onBeforeRouteLeave(async (to, from, next) => {
-  if (!store.isDirty) return next()
+onMounted(() => {
+  store.init()
+  window.addEventListener('beforeunload', beforeUnloadHandler)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', beforeUnloadHandler)
+})
+
+onBeforeRouteLeave(async () => {
+  if (!store.isDirty) return true
+  let choice
   try {
     await ElMessageBox.confirm(
-      '行程有未儲存的變更，確定要離開嗎？',
+      '行程有未儲存的變更，要先儲存嗎？',
       '尚未儲存',
-      { confirmButtonText: '離開', cancelButtonText: '繼續編輯', type: 'warning' }
+      {
+        confirmButtonText: '儲存並離開',
+        cancelButtonText: '放棄變更',
+        distinguishCancelAndClose: true,
+        type: 'warning',
+        closeOnClickModal: false,
+      }
     )
-    next()
-  } catch {
-    next(false)
+    choice = 'save'
+  } catch (action) {
+    choice = action === 'cancel' ? 'discard' : 'stay'
   }
+
+  if (choice === 'save') {
+    await store.saveToBackend()
+    return !store.isDirty  // 存檔失敗仍 dirty → 留下；成功 → 離開
+  }
+  if (choice === 'discard') {
+    await store.discardChanges()
+    return true
+  }
+  return false  // stay
 })
 </script>
 
