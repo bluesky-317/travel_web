@@ -16,7 +16,16 @@ request.interceptors.request.use(config => {
 
 request.interceptors.response.use(
   response => response.data,
-  error => Promise.reject(new Error(error.response?.data?.message || '網路錯誤'))
+  error => {
+    const data = error.response?.data;
+    let msg = data?.detail ?? data?.message;
+    if (Array.isArray(msg)) {
+      msg = msg.map(e => e?.msg).filter(Boolean).join('；');
+    } else if (msg && typeof msg === 'object') {
+      msg = msg.msg || JSON.stringify(msg);
+    }
+    return Promise.reject(new Error(msg || '網路錯誤'));
+  }
 );
 
 export default request;

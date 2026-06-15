@@ -17,5 +17,7 @@
   font-size: 0.92rem;
   text-align: center;
   line-height: 1.5;
+  margin-top: auto;
+  flex-shrink: 0;
 }
 </style>

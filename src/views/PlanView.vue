@@ -66,7 +66,7 @@ onBeforeRouteLeave(async (to, from, next) => {
 }
 
 .plan-layout {
-  height: calc(100vh - 61px);
+  flex: 1;
   min-height: 620px;
   display: flex;
   overflow: hidden;

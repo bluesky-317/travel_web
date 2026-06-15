@@ -30,8 +30,12 @@ onMounted(() => exploreStore.fetch())
 .explore-page {
   min-height: 100vh;
   background: #f8fafc;
+  display: flex;
+  flex-direction: column;
 }
 .main-layout {
+  flex: 1;
+  width: 100%;
   display: flex;
   max-width: 1300px;
   margin: 0 auto;

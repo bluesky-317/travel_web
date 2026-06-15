@@ -100,7 +100,7 @@ async function submitChangePassword() {
   changingPw.value = true
   try {
     await authStore.changePassword({
-      currentPassword: passwordForm.value.currentPassword,
+      oldPassword: passwordForm.value.currentPassword,
       newPassword: passwordForm.value.newPassword,
     })
     ElMessage.success('密碼已成功更新')

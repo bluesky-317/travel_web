@@ -5,10 +5,17 @@ import Header from '../components/home/Header.vue';
 </script>
 
 <template>
-  <Header />
-  <CardList />
-  <Footer />
+  <div class="home-page">
+    <Header />
+    <CardList />
+    <Footer />
+  </div>
 </template>
 
 <style scoped>
+.home-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
 </style>
