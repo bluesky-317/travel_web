@@ -98,4 +98,14 @@ watch(() => store.leftTab, (tab) => {
 
 .card-scroll { flex: 1; min-height: 0; }
 .card-inner  { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+
+@media (max-width: 768px) {
+  .left-panel {
+    width: 100%;
+    min-width: 0;
+    max-height: 220px;
+    border-right: none;
+    border-bottom: 1px solid var(--bd);
+  }
+}
 </style>

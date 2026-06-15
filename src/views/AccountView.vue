@@ -92,4 +92,10 @@ const router = useRouter()
   color: #1e293b;
   margin: 0 0 8px;
 }
+
+@media (max-width: 768px) {
+  .account-page { padding: 24px 12px 40px; }
+  .account-container { padding: 24px 18px; }
+  .account-container h2 { font-size: 20px; }
+}
 </style>

@@ -138,4 +138,14 @@ watch(() => store.rightTab, (tab) => {
 .pager :deep(.el-pagination) {
   --el-pagination-font-size: 11px;
 }
+
+@media (max-width: 768px) {
+  .right-panel {
+    width: 100%;
+    min-width: 0;
+    max-height: 280px;
+    border-left: none;
+    border-top: 1px solid var(--bd);
+  }
+}
 </style>

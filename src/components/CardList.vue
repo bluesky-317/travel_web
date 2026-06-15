@@ -146,6 +146,8 @@ onUnmounted(() => {
   max-width: 1400px;
   margin: 2rem auto;
   padding: 0 20px;
+  width: 100%;
+  min-width: 0;
 }
 
 :deep(.section-title) {
@@ -164,6 +166,7 @@ onUnmounted(() => {
 
 .scroll-wrapper {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   position: relative;
   -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
@@ -267,4 +270,45 @@ onUnmounted(() => {
 }
 
 .retry-btn:hover { background: #ffe4e6; }
+
+@media (max-width: 768px) {
+  .container { padding: 0 14px; margin: 1.25rem auto; }
+  :deep(.section-title) { font-size: 1.4rem; margin-bottom: 1.2rem; }
+  .carousel-container { display: block; }
+  .nav-btn {
+    position: absolute;
+    top: 50%;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
+    font-size: 1.25rem;
+    line-height: 1;
+    transform: translateY(-50%);
+  }
+  .nav-btn:hover { transform: translateY(-50%); }
+  .prev-btn { left: 6px; }
+  .next-btn { right: 6px; }
+  .scroll-wrapper {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .card-grid {
+    gap: 0;
+    padding: 12px 0;
+  }
+  .card-grid > * { flex: 0 0 100%; }
+}
+
+@media (max-width: 480px) {
+  .container { padding: 0 12px; }
+  .nav-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+  .dots-container { margin-top: 0.75rem; }
+}
 </style>

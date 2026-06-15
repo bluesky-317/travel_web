@@ -127,4 +127,14 @@ const displayCards = computed(() =>
   cursor: pointer;
 }
 .retry-btn:hover { background: #ffe4e6; }
+
+@media (max-width: 768px) {
+  .result-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .result-count { font-size: 0.92rem; }
+  .card-list { gap: 12px; }
+}
 </style>

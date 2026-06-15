@@ -1,45 +1,44 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const routes = [
   {
     path: '/',
     name: 'home',
-    component: HomeView,
+    component: () => import('@/views/HomeView.vue'),
   },
   {
     path: '/about',
     name: 'about',
-    component: () => import('../views/ExploreView.vue'),
+    component: () => import('@/views/ExploreView.vue'),
   },
   {
     path: '/attraction/:id',
     name: 'attraction',
-    component: () => import('../views/AttractionDetailView.vue'),
+    component: () => import('@/views/AttractionDetailView.vue'),
   },
   {
     path: '/plan',
     name: 'plan',
-    component: () => import('../views/PlanView.vue'),
+    component: () => import('@/views/PlanView.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/account',
     name: 'account',
-    component: () => import('../views/AccountView.vue'),
+    component: () => import('@/views/AccountView.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/admin',
     name: 'admin',
-    component: () => import('../views/AdminView.vue'),
+    component: () => import('@/views/AdminView.vue'),
     meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
-    component: () => import('../views/NotFoundView.vue'),
+    component: () => import('@/views/NotFoundView.vue'),
   },
 ]
 

@@ -128,13 +128,14 @@ onUnmounted(() => clearInterval(timer))
   z-index: 2;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
   pointer-events: none;
-  white-space: nowrap;
+  width: min(86vw, 680px);
 }
 .caption-name {
   font-size: 1.6rem;
   font-weight: 700;
   margin: 0 0 6px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 .caption-location {
   display: flex;
@@ -188,9 +189,38 @@ onUnmounted(() => clearInterval(timer))
 
 /* ── Mobile ─────────────────────────────── */
 @media (max-width: 768px) {
+  .hero-header {
+    aspect-ratio: auto;
+    min-height: 360px;
+    height: 58vh;
+    max-height: 480px;
+  }
   .caption        { transform: translate(-50%, -72%); }
   .caption-name   { font-size: 1.1rem; }
   .caption-location { font-size: 0.8rem; }
   .dots           { top: calc(50% + 38px); }
+}
+
+@media (max-width: 480px) {
+  .hero-header {
+    min-height: 320px;
+    height: 52vh;
+  }
+  .caption {
+    width: min(90vw, 360px);
+    transform: translate(-50%, -78%);
+  }
+  .caption-name {
+    font-size: 1rem;
+    line-height: 1.35;
+  }
+  .caption-location {
+    flex-wrap: wrap;
+    line-height: 1.35;
+  }
+  .dots {
+    top: calc(50% + 34px);
+    gap: 6px;
+  }
 }
 </style>

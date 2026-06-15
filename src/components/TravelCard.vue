@@ -220,6 +220,14 @@ defineProps({
   color: #7f8c8d;
   font-size: 0.85rem;
   margin-bottom: 10px;
+  min-width: 0;
+}
+
+.card-location span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card-title {
@@ -261,5 +269,71 @@ defineProps({
 
 .btn:hover {
   background-color: #2980b9;
+}
+
+/* ── 手機版（list 版型） ── */
+@media (max-width: 640px) {
+  .card-list-item { gap: 14px; }
+  .list-img-wrap { flex: 0 0 130px; }
+  .list-body { padding: 12px 14px 12px 4px; }
+  .list-title { font-size: 1.05rem; }
+  .list-desc { font-size: 0.88rem; }
+}
+
+@media (max-width: 480px) {
+  .card-list-item { flex-direction: column; gap: 0; }
+  .list-img-wrap {
+    flex: 0 0 auto;
+    width: 100%;
+    height: 160px;
+    align-self: auto;
+  }
+  .list-body { padding: 14px 16px 16px; }
+  .list-detail-btn { margin-left: 0; }
+}
+
+/* ── 手機版（card 版型 / 首頁輪播） ── */
+@media (max-width: 768px) {
+  .card {
+    min-height: auto;
+    border-radius: 12px;
+    width: 100%;
+  }
+  .card:hover { transform: none; }
+  .card-img { height: 180px; }
+  .card-content {
+    padding: 1rem;
+    min-height: auto;
+  }
+  .card-category {
+    font-size: 0.78rem;
+    padding: 3px 10px;
+  }
+  .card-category-container { margin-bottom: 8px; }
+  .card-location { font-size: 0.78rem; margin-bottom: 8px; }
+  .card-title {
+    font-size: 1.05rem;
+    min-height: auto;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+  .card-content p {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    min-height: auto;
+    -webkit-line-clamp: 2;
+    margin-bottom: 12px;
+  }
+  .btn {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .card-img { height: 160px; }
+  .card-content { padding: 0.85rem; }
+  .card-title { font-size: 1rem; }
+  .card-content p { font-size: 0.82rem; }
 }
 </style>

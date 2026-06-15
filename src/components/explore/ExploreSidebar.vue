@@ -86,4 +86,15 @@ const hasActiveFilters = computed(() =>
   transition: all 0.2s;
 }
 .clear-all-btn:hover { border-color: #ef4444; color: #ef4444; }
+
+@media (max-width: 768px) {
+  .sidebar {
+    flex: 0 0 auto;
+    width: 100%;
+    position: static;
+    top: auto;
+    padding: 14px 16px;
+  }
+  .filter-group { margin-bottom: 14px; }
+}
 </style>

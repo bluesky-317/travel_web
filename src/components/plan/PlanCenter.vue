@@ -753,6 +753,44 @@ onUnmounted(() => {
 
 /* ── Note dialog ── */
 .note-area-wrap { padding: 4px 0; }
+
+/* ── 手機版 ── */
+@media (max-width: 768px) {
+  .center-hd {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .title-input { font-size: 1rem !important; }
+
+  .date-row {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 10px;
+  }
+  .date-label { font-size: .82rem; }
+  .dp { width: 120px; }
+
+  .day-tabs-wrap { padding: 4px 6px; }
+  .day-tab { min-width: 56px; font-size: .82rem; }
+
+  .tl-row { flex-wrap: wrap; gap: 6px; }
+  .tl-time { order: 3; width: 100%; justify-content: flex-end; }
+  .tp { width: 72px; }
+
+  .center-ft {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .ft-stats { font-size: .82rem; gap: 10px; }
+  .save-btn { padding: 0 14px !important; font-size: .9rem; }
+}
+
+@media (max-width: 480px) {
+  .tl-thumb { width: 56px; height: 46px; }
+  .ft-stats { font-size: .78rem; gap: 8px; }
+}
 </style>
 
 <style>

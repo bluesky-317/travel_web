@@ -175,4 +175,35 @@ function handleMenuSelect(key) {
 .main-top {
   margin-bottom: 20px;
 }
+
+@media (max-width: 768px) {
+  /* 手機強制 sidebar 縮成 icon-only，內容才有空間 */
+  .admin-aside {
+    width: 56px !important;
+    --el-aside-width: 56px !important;
+  }
+  .side-menu :deep(.el-menu-item) {
+    font-size: 0;
+    padding: 0 18px !important;
+    justify-content: center;
+  }
+  .side-menu :deep(.el-menu-item i) {
+    font-size: 16px;
+    margin-right: 0;
+  }
+  .collapse-toggle { display: none; }
+
+  .admin-main {
+    padding: 16px 14px;
+    font-size: 14px;
+  }
+  .admin-main :deep(.el-table),
+  .admin-main :deep(.el-table th),
+  .admin-main :deep(.el-input__inner),
+  .admin-main :deep(.el-textarea__inner),
+  .admin-main :deep(.el-button),
+  .admin-main :deep(.el-form-item__label) {
+    font-size: 14px;
+  }
+}
 </style>

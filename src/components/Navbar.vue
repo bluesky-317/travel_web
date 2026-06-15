@@ -105,6 +105,8 @@ async function confirmLogout() {
   align-items: center;
   padding: 0 30px;
   height: 61px;
+  width: 100%;
+  min-width: 0;
   border-bottom: none !important; /* 移除 Element Plus 預設底線 */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   position: sticky;
@@ -137,6 +139,7 @@ async function confirmLogout() {
 :deep(.el-menu-item), 
 :deep(.el-sub-menu__title) {
   font-size: 14px;
+  min-width: 0;
 }
 
 /* 登入按鈕容器：移除選單原本的 hover 背景色 */
@@ -215,5 +218,68 @@ async function confirmLogout() {
   background-color: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.6);
   transform: rotate(30deg);
+}
+
+/* ── 手機版 ── */
+@media (max-width: 768px) {
+  .navbar-menu {
+    padding: 0 8px;
+    height: 54px;
+    overflow: visible;
+  }
+  .logo {
+    font-size: 17px;
+    margin-right: 6px;
+  }
+  :deep(.el-menu-item),
+  :deep(.el-sub-menu__title) {
+    font-size: 13px;
+    padding: 0 7px !important;
+  }
+  .login-menu-item { padding-right: 0 !important; }
+  .login-btn,
+  .logout-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  .gear-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+  }
+  .settings-dropdown { margin-left: 4px; }
+}
+
+@media (max-width: 480px) {
+  .navbar-menu { padding: 0 4px; }
+  .logo {
+    font-size: 0;          /* 隱藏文字 */
+    margin-right: 2px;
+  }
+  .logo i {
+    font-size: 22px;       /* icon 維持可見 */
+  }
+  :deep(.el-menu-item),
+  :deep(.el-sub-menu__title) {
+    font-size: 12px;
+    padding: 0 5px !important;
+  }
+  .login-btn,
+  .logout-btn {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .settings-dropdown { margin-left: 2px; }
+}
+
+@media (max-width: 360px) {
+  :deep(.el-menu-item),
+  :deep(.el-sub-menu__title) {
+    padding: 0 4px !important;
+  }
+  .login-btn,
+  .logout-btn {
+    padding: 4px 7px;
+  }
 }
 </style>

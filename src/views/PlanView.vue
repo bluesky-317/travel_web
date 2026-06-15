@@ -103,4 +103,12 @@ onBeforeRouteLeave(async () => {
   overflow: hidden;
   border-top: 3px solid var(--bd);
 }
+
+@media (max-width: 768px) {
+  .plan-layout {
+    flex-direction: column;
+    min-height: 0;
+    overflow: visible;
+  }
+}
 </style>
