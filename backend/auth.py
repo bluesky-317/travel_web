@@ -53,14 +53,6 @@ class AuthDependencies:
             raise HTTPException(status_code=401, detail="Token 無效或已過期")
         return user
 
-    def optional_user(
-        self,
-        credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
-    ):
-        if not credentials:
-            return None
-        return self.sessions.get(credentials.credentials)
-
     def require_admin(self, current_user: dict) -> dict:
         if current_user.get("role") != "admin":
             raise HTTPException(status_code=403, detail="需要管理員權限")

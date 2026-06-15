@@ -11,13 +11,11 @@ import database as db
 from auth import PasswordService, SessionStore
 from models import Attraction, Category, City, Itinerary, ItineraryItem, User
 from schemas import (
-    AddItemBody,
     AttractionBody,
     ChangePasswordBody,
     CreateItineraryBody,
     PutItemsBody,
     RegisterBody,
-    UpdateItemBody,
     UpdateItineraryBody,
     UpdateProfileBody,
 )
@@ -514,45 +512,6 @@ class ItineraryService:
             "days": [],
         } for itin in rows]
 
-    def current(self, user_id: str) -> dict:
-        with db.session_scope() as session:
-            itin = session.execute(
-                select(Itinerary)
-                .where(
-                    Itinerary.user_id == int(user_id),
-                    Itinerary.is_deleted.is_(False),
-                )
-                .order_by(desc(Itinerary.updated_at))
-                .limit(1)
-            ).scalar_one_or_none()
-            if not itin:
-                return {"id": None, "items": []}
-            items = session.execute(
-                select(
-                    ItineraryItem.itinerary_item_id,
-                    ItineraryItem.attraction_id,
-                    ItineraryItem.day_index,
-                    ItineraryItem.start_time,
-                    ItineraryItem.end_time,
-                    ItineraryItem.note,
-                    ItineraryItem.order_index,
-                )
-                .where(ItineraryItem.itinerary_id == itin.itinerary_id)
-                .order_by(ItineraryItem.day_index, ItineraryItem.order_index)
-            ).all()
-            return {
-                "id": itin.itinerary_id,
-                "items": [{
-                    "itinerary_item_id": row.itinerary_item_id,
-                    "attraction_id": row.attraction_id,
-                    "day_index": row.day_index,
-                    "start_time": _iso(row.start_time),
-                    "end_time": _iso(row.end_time),
-                    "note": row.note,
-                    "order_index": row.order_index,
-                } for row in items],
-            }
-
     def create(self, body: CreateItineraryBody, user_id: str) -> dict:
         itin_id = str(uuid.uuid4())
         with db.session_scope() as session:
@@ -624,58 +583,3 @@ class ItineraryService:
             } for order_i, item in enumerate(body.items)]
             if payload:
                 session.execute(insert(ItineraryItem), payload)
-
-    def add_item(self, itin_id: str, body: AddItemBody, user_id: str) -> None:
-        with db.session_scope() as session:
-            self._ensure_owned(session, itin_id, user_id)
-            max_order = session.execute(
-                select(func.coalesce(func.max(ItineraryItem.order_index), -1)).where(
-                    ItineraryItem.itinerary_id == itin_id,
-                    ItineraryItem.day_index == body.dayIndex,
-                )
-            ).scalar_one()
-            session.add(ItineraryItem(
-                itinerary_item_id=body.uid,
-                itinerary_id=itin_id,
-                attraction_id=body.attractionId,
-                day_index=body.dayIndex,
-                start_time=body.startTime,
-                end_time=body.endTime,
-                note=body.note,
-                order_index=max_order + 1,
-            ))
-
-    def remove_item(self, itin_id: str, item_id: str, user_id: str) -> None:
-        with db.session_scope() as session:
-            self._ensure_owned(session, itin_id, user_id)
-            session.execute(
-                delete(ItineraryItem).where(
-                    ItineraryItem.itinerary_item_id == item_id,
-                    ItineraryItem.itinerary_id == itin_id,
-                )
-            )
-
-    def update_item(self, itin_id: str, item_id: str, body: UpdateItemBody, user_id: str) -> None:
-        values: dict = {}
-        if body.startTime is not None:
-            values["start_time"] = body.startTime
-        if body.endTime is not None:
-            values["end_time"] = body.endTime
-        if body.note is not None:
-            values["note"] = body.note
-        if body.dayIndex is not None:
-            values["day_index"] = body.dayIndex
-        if body.orderIndex is not None:
-            values["order_index"] = body.orderIndex
-        if not values:
-            return
-        with db.session_scope() as session:
-            self._ensure_owned(session, itin_id, user_id)
-            session.execute(
-                update(ItineraryItem)
-                .where(
-                    ItineraryItem.itinerary_item_id == item_id,
-                    ItineraryItem.itinerary_id == itin_id,
-                )
-                .values(**values)
-            )

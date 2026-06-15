@@ -15,7 +15,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({

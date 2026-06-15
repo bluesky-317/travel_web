@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import 'leaflet/dist/leaflet.css'
 
 const app = createApp(App)
 const pinia = createPinia()

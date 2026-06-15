@@ -1,10 +1,6 @@
 import request from '@/utils/request'
 
-export function getAttractionList() {
-  return request({ url: '/attractions', method: 'get' })
-}
-
-export function searchAttractions(params) {
+export function searchAttractions(params = undefined) {
   return request({ url: '/attractions', method: 'get', params })
 }
 

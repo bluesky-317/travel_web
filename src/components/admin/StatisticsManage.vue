@@ -33,7 +33,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getAttractionList } from '@/api/Attraction'
+import { searchAttractions } from '@/api/Attraction'
 
 const BAR_MAX_HEIGHT = 220
 
@@ -84,7 +84,7 @@ const yTicks = computed(() => {
 async function loadData() {
   loading.value = true
   try {
-    const res = await getAttractionList()
+    const res = await searchAttractions()
     rawData.value = res.data
   } catch {
     ElMessage.error('載入資料失敗')

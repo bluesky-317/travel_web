@@ -31,15 +31,3 @@ export function hardDeleteItineraryApi(id) {
 export function putItineraryItemsApi(id, items) {
   return request({ url: `/itineraries/${id}/items`, method: 'put', data: { items } })
 }
-
-export function addItineraryItemApi(id, item) {
-  return request({ url: `/itineraries/${id}/items`, method: 'post', data: item })
-}
-
-export function removeItineraryItemApi(id, itemId) {
-  return request({ url: `/itineraries/${id}/items/${itemId}`, method: 'delete' })
-}
-
-export function updateItineraryItemApi(id, itemId, data) {
-  return request({ url: `/itineraries/${id}/items/${itemId}`, method: 'patch', data })
-}

@@ -145,28 +145,6 @@ defineProps({
 .list-detail-btn {
   margin-left: auto;
 }
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 14px;
-  border-radius: 20px;
-  border: 1.5px solid #d1d5db;
-  background: #fff;
-  color: #6b7280;
-  font-size: 0.92rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.action-btn:hover {
-  border-color: #9ca3af;
-  color: #374151;
-}
-.action-btn--active-fav {
-  border-color: #e11d48;
-  background: #fff1f2;
-  color: #e11d48;
-}
 /* ── 原有卡片版型 ── */
 .card {
   background: white;

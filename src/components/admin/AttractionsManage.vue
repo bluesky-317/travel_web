@@ -183,7 +183,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAttractionList } from '@/api/Attraction'
+import { searchAttractions } from '@/api/Attraction'
 import { createAttraction, updateAttraction, deleteAttraction } from '@/api/admin'
 
 const attractions = ref([])
@@ -221,7 +221,7 @@ const rules = {
 async function loadAttractions() {
   loading.value = true
   try {
-    const res = await getAttractionList()
+    const res = await searchAttractions()
     attractions.value = res.data
   } catch {
     ElMessage.error('載入景點失敗')

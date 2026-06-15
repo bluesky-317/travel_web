@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { getAttractionList, searchAttractions } from '@/api/Attraction'
+import { searchAttractions } from '@/api/Attraction'
 import {
   listItineraries, listItinerariesTrash, createItineraryApi,
   updateItineraryApi, deleteItineraryApi, restoreItineraryApi,
@@ -60,7 +60,6 @@ export const usePlanStore = defineStore('plan', {
 
     attractions: [],
     attractionsLoading: false,
-    attractionsError: null,
 
     itineraryAttrIds: loadStoredItineraryIds(),
 
@@ -119,21 +118,6 @@ export const usePlanStore = defineStore('plan', {
 
     normalItineraries: s => s.itineraries.filter(i => !i.isDeleted),
     deletedItineraries: s => s.itineraries.filter(i => i.isDeleted),
-
-    allTags(state) {
-      const s = new Set()
-      state.attractions.forEach(a => a.category && s.add(a.category))
-      return [...s].sort()
-    },
-
-    filteredAttractions(state) {
-      const q = state.filterText.toLowerCase()
-      return state.attractions.filter(a => {
-        const txt = !q || a.name.toLowerCase().includes(q) || a.location.toLowerCase().includes(q)
-        const category = !state.selCategory || a.category === state.selCategory
-        return txt && category
-      })
-    },
 
     unscheduledAttractions(state) {
       const itin = this.activeItinerary
@@ -416,12 +400,11 @@ export const usePlanStore = defineStore('plan', {
 
     async fetchAttractions() {
       this.attractionsLoading = true
-      this.attractionsError   = null
       try {
-        const res = await getAttractionList()
+        const res = await searchAttractions()
         this.attractions = res?.data ?? []
-      } catch (err) {
-        this.attractionsError = err.message
+      } catch {
+        this.attractions = []
       } finally {
         this.attractionsLoading = false
       }
@@ -468,10 +451,6 @@ export const usePlanStore = defineStore('plan', {
       } catch {
         ElMessage.error('還原失敗')
       }
-    },
-
-    markSaved() {
-      this.isDirty = false
     },
 
     // ── init ──────────────────────────────────────────────────────────────────

@@ -17,5 +17,5 @@ export default defineConfig({
     minify: 'terser',
     chunkSizeWarningLimit: 500,
   },
-  base: '/',
+  base: './',
 })

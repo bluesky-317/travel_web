@@ -90,7 +90,7 @@ onUnmounted(() => {
 
     <div v-else-if="store.listError" class="state-msg state-msg--error">
       <i class="fa-solid fa-circle-exclamation"></i> {{ store.listError }}
-      <button class="retry-btn" @click="store.fetchList(store.listPage)">重新載入</button>
+      <button class="retry-btn" @click="store.fetchList()">重新載入</button>
     </div>
 
     <template v-else>

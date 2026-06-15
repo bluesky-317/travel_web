@@ -17,7 +17,7 @@
 
     <!-- 選單項目 -->
     <el-menu-item index="/">首頁</el-menu-item>
-    <el-menu-item index="/about">探索</el-menu-item>
+    <el-menu-item index="/explore">探索</el-menu-item>
 
     <el-menu-item index="/plan">規劃</el-menu-item>
 

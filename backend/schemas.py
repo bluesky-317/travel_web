@@ -49,23 +49,6 @@ class PutItemsBody(BaseModel):
     items: list[ItineraryItemInput]
 
 
-class AddItemBody(BaseModel):
-    uid: str
-    attractionId: str
-    dayIndex: int
-    startTime: str
-    endTime: str
-    note: str = ""
-
-
-class UpdateItemBody(BaseModel):
-    startTime: Optional[str] = None
-    endTime: Optional[str] = None
-    note: Optional[str] = None
-    dayIndex: Optional[int] = None
-    orderIndex: Optional[int] = None
-
-
 class AttractionBody(BaseModel):
     name: str
     city: Optional[str] = None

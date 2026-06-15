@@ -86,16 +86,6 @@ def _split_sql_script(script: str) -> list[str]:
     return statements
 
 
-def schema_ready(required_tables: tuple[str, ...]) -> bool:
-    """Return True when the configured database contains every required table."""
-    inspector = inspect(server_engine)
-    try:
-        existing = set(inspector.get_table_names(schema=DB_NAME))
-    except Exception:
-        return False
-    return all(table in existing for table in required_tables)
-
-
 def get_columns(table: str) -> set[str]:
     """Return column names for a table. Lookup is case-insensitive."""
     inspector = inspect(server_engine)

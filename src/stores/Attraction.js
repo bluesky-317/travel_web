@@ -101,14 +101,6 @@ export const useAttractionStore = defineStore('attraction', {
       }
     },
 
-    /**
-     * 強制使某筆快取失效（例如：編輯後需要重新拉取）
-     */
-    invalidate(id) {
-      delete this.cache[id]
-      delete this.meta[id]
-    },
-
     async fetchList() {
       if (this.listLoading) return
       this.listLoading = true

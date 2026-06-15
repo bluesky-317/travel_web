@@ -5,14 +5,12 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from auth import AuthDependencies
 from schemas import (
-    AddItemBody,
     AttractionBody,
     ChangePasswordBody,
     CreateItineraryBody,
     LoginBody,
     PutItemsBody,
     RegisterBody,
-    UpdateItemBody,
     UpdateItineraryBody,
     UpdateProfileBody,
 )
@@ -69,7 +67,6 @@ def create_router(
         sort: Optional[str] = None,
         page: Optional[int] = None,
         page_size: int = 10,
-        current_user: Optional[dict] = Depends(auth.optional_user),
     ):
         return {"data": attractions.list(q, cities, category, sort, page, page_size)}
 
@@ -104,10 +101,6 @@ def create_router(
     @router.get("/itineraries/trash")
     def list_itineraries_trash(current_user: dict = Depends(auth.current_user)):
         return {"data": itineraries.list_trash(current_user["id"])}
-
-    @router.get("/itineraries/current")
-    def get_current_itinerary(current_user: dict = Depends(auth.current_user)):
-        return {"data": itineraries.current(current_user["id"])}
 
     @router.post("/itineraries")
     def create_itinerary(body: CreateItineraryBody, current_user: dict = Depends(auth.current_user)):
@@ -144,34 +137,6 @@ def create_router(
         current_user: dict = Depends(auth.current_user),
     ):
         itineraries.replace_items(itin_id, body, current_user["id"])
-        return {"data": {"message": "已更新"}}
-
-    @router.post("/itineraries/{itin_id}/items")
-    def add_itinerary_item(
-        itin_id: str,
-        body: AddItemBody,
-        current_user: dict = Depends(auth.current_user),
-    ):
-        itineraries.add_item(itin_id, body, current_user["id"])
-        return {"data": {"message": "已新增"}}
-
-    @router.delete("/itineraries/{itin_id}/items/{item_id}")
-    def remove_itinerary_item(
-        itin_id: str,
-        item_id: str,
-        current_user: dict = Depends(auth.current_user),
-    ):
-        itineraries.remove_item(itin_id, item_id, current_user["id"])
-        return {"data": {"message": "已移除"}}
-
-    @router.patch("/itineraries/{itin_id}/items/{item_id}")
-    def update_itinerary_item(
-        itin_id: str,
-        item_id: str,
-        body: UpdateItemBody,
-        current_user: dict = Depends(auth.current_user),
-    ):
-        itineraries.update_item(itin_id, item_id, body, current_user["id"])
         return {"data": {"message": "已更新"}}
 
     @router.get("/admin/users")

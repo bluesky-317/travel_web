@@ -336,10 +336,10 @@ let leafletMap = null
 let markers = []
 
 function initMap() {
-  if (!mapEl.value || !window.L) return
+  if (!mapEl.value) return
   if (leafletMap) { leafletMap.remove(); leafletMap = null }
-  leafletMap = window.L.map(mapEl.value).setView([23.8, 121.0], 8)
-  window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  leafletMap = L.map(mapEl.value).setView([23.8, 121.0], 8)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
   }).addTo(leafletMap)
   updateMarkers()
@@ -365,7 +365,7 @@ function updateMarkers() {
     if (!attr?.lat || !attr?.lon) return
     const coords = [attr.lat, attr.lon]
     bounds.push(coords)
-    const marker = window.L.marker(coords).addTo(leafletMap)
+    const marker = L.marker(coords).addTo(leafletMap)
     marker.bindTooltip(
       `<b>${item.name}</b><br>📅 ${dayDate}<br>🕐 ${item.startTime} - ${item.endTime}` +
       (item.note ? `<br>📝 ${item.note}` : ''),

@@ -22,7 +22,7 @@ from sqlalchemy import (
     Time,
     func,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
@@ -103,9 +103,6 @@ class Attraction(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
-
-    category: Mapped[Optional["Category"]] = relationship(lazy="raise")
-    city: Mapped[Optional["City"]] = relationship(lazy="raise")
 
 
 class Itinerary(Base):
