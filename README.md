@@ -19,10 +19,11 @@
 
 * 後端
 
-    1. 進入 `backend` 資料夾。
+    1. 執行 `cd backend` 進入 `backend` 資料夾。
     2. 執行 `pip install -r requirements.txt`。 (python 版本建議 3.10)
-    3. 進入資料庫CLI中執行 `SOURCE <專案根目錄>/backend/schema.sql;`。(建立資料表)
-    4. 進入資料庫CLI中執行 `SOURCE <專案根目錄>/backend/data_setting.sql;`。(加入資料)
+    3. 執行 `cd mariadb-12.3.2-winx64\bin && mariadb-install-db.exe --datadir=..\data` 初始化資料庫。
+    4. 進入資料庫CLI中執行 `SOURCE <專案根目錄>/backend/schema.sql;`。(建立資料表)
+    5. 進入資料庫CLI中執行 `SOURCE <專案根目錄>/backend/data_setting.sql;`。(加入資料)
 
 * 配置檔
 

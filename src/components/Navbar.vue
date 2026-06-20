@@ -68,8 +68,10 @@ const activeIndex = computed(() => route.path)
 
 // 登入鈕 modal event process
 import { useAuthStore } from '@/stores/auth';
+import { usePlanStore } from '@/stores/plan';
 import { useRouter } from 'vue-router';
 const authStore = useAuthStore();
+const planStore = usePlanStore();
 const router = useRouter();
 
 function handleCommand(command) {
@@ -81,19 +83,51 @@ function handleCommand(command) {
 }
 
 async function confirmLogout() {
-  try {
-    await ElMessageBox.confirm(
-      '確定要登出嗎？',
-      '確認登出',
-      {
-        confirmButtonText: '登出',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-    authStore.logout()
-    router.replace('/')
-  } catch {}
+  // 規劃頁有未存擋：合併成單一對話框，避免登出後 onBeforeRouteLeave 再次攔截（API 已 401）
+  if (planStore.isDirty) {
+    let choice
+    try {
+      await ElMessageBox.confirm(
+        '行程有未儲存的變更，登出後將會遺失。要先儲存嗎？',
+        '尚未儲存',
+        {
+          confirmButtonText: '儲存並登出',
+          cancelButtonText: '放棄變更並登出',
+          distinguishCancelAndClose: true,
+          type: 'warning',
+          closeOnClickModal: false,
+        }
+      )
+      choice = 'save'
+    } catch (action) {
+      choice = action === 'cancel' ? 'discard' : 'stay'
+    }
+
+    if (choice === 'stay') return
+    if (choice === 'save') {
+      await planStore.saveToBackend()
+      if (planStore.isDirty) return  // 存檔失敗（網路等）→ 中止登出，留在原處
+    }
+    // 放棄變更：要登出了，本地狀態反正會丟，直接清掉 dirty 讓 route guard 放行
+    planStore.isDirty = false
+  } else {
+    try {
+      await ElMessageBox.confirm(
+        '確定要登出嗎？',
+        '確認登出',
+        {
+          confirmButtonText: '登出',
+          cancelButtonText: '取消',
+          type: 'warning',
+        }
+      )
+    } catch {
+      return
+    }
+  }
+
+  authStore.logout()
+  router.replace('/')
 }
 
 </script>
