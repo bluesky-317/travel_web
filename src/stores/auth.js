@@ -2,6 +2,13 @@ import { defineStore } from 'pinia';
 import { loginApi, getUserInfoApi, registerApi, updateProfileApi, changePasswordApi, deleteAccountApi } from '@/api/auth';
 import Cookies from 'js-cookie';
 import { ElMessage } from 'element-plus';
+import { usePlanStore } from '@/stores/plan';
+
+// 取出可用來分桶 localStorage 的使用者識別碼（id 優先，沒有再退回 email）
+function ownerKeyOf(user) {
+  if (!user) return null
+  return user.id ?? user.userId ?? user.email ?? null
+}
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -45,7 +52,8 @@ export const useAuthStore = defineStore('auth', {
         // 3. 獲取並儲存使用者詳細資料
         const userRes = await getUserInfoApi();
         this.user = userRes.data;
-        
+        usePlanStore().syncItineraryAttrIds(ownerKeyOf(this.user));
+
         // 4. 關閉彈窗
         this.isLoginModalOpen = false;
 
@@ -71,6 +79,7 @@ export const useAuthStore = defineStore('auth', {
       this.user = null
       this.token = ''
       Cookies.remove('token')
+      usePlanStore().syncItineraryAttrIds(null)
     },
 
     // 頁面刷新後，token 從 cookie 恢復，但 user 需重新從 API 取得
@@ -78,11 +87,13 @@ export const useAuthStore = defineStore('auth', {
       try {
         const userRes = await getUserInfoApi()
         this.user = userRes.data
+        usePlanStore().syncItineraryAttrIds(ownerKeyOf(this.user))
       } catch {
         // token 失效，清除狀態
         this.user = null
         this.token = ''
         Cookies.remove('token')
+        usePlanStore().syncItineraryAttrIds(null)
       }
     },
 
@@ -91,6 +102,7 @@ export const useAuthStore = defineStore('auth', {
       this.user = null;
       this.token = '';
       Cookies.remove('token');
+      usePlanStore().syncItineraryAttrIds(null);
       ElMessage.info('已登出');
     },
 
@@ -111,6 +123,7 @@ export const useAuthStore = defineStore('auth', {
         // 4. 獲取並儲存使用者詳細資料 (註冊後通常會直接獲取資料)
         const userRes = await getUserInfoApi();
         this.user = userRes.data;
+        usePlanStore().syncItineraryAttrIds(ownerKeyOf(this.user));
 
         // 5. 關閉註冊彈窗
         this.isRegisterModalOpen = false;

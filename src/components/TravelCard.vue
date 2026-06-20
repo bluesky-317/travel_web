@@ -182,13 +182,20 @@ defineProps({
   margin-bottom: 12px;
 }
 
+/* 簡約標籤 */
 .card-category {
-  color: white;
-  padding: 4px 12px;
-  font-size: 0.875rem;
-  border-radius: 20px;
+  display: inline-block;
+  background: #e8f1f2;
+  color: #4f6d7a;
+  font-size: 13px;
+  padding: 5px 10px;
+  border-radius: 4px;
   font-weight: 500;
-  background-color: #34495e;
+  line-height: 1.4;
+}
+.card-category::before {
+  content: '#';
+  margin-right: 1px;
 }
 
 .card-location {
@@ -282,10 +289,6 @@ defineProps({
   .card-content {
     padding: 1rem;
     min-height: auto;
-  }
-  .card-category {
-    font-size: 0.78rem;
-    padding: 3px 10px;
   }
   .card-category-container { margin-bottom: 8px; }
   .card-location { font-size: 0.78rem; margin-bottom: 8px; }

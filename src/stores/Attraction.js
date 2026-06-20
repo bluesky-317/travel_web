@@ -30,8 +30,13 @@ export const useAttractionStore = defineStore('attraction', {
     attraction: (state) =>
       state.currentId ? state.cache[state.currentId] ?? null : null,
 
-    category:      (state) => state.cache[state.currentId]?.category      ?? '',
-    isInItinerary: (state) => state.cache[state.currentId]?.isInItinerary ?? false,
+    category: (state) => state.cache[state.currentId]?.category ?? '',
+    // 直接從 planStore 即時算，避免把布林值寫進 cache 後跟使用者狀態走鐘
+    isInItinerary(state) {
+      if (!state.currentId) return false
+      const planStore = usePlanStore()
+      return planStore.itineraryAttrIds.includes(String(state.currentId))
+    },
   },
 
   actions: {
@@ -51,10 +56,6 @@ export const useAttractionStore = defineStore('attraction', {
       // 快取命中：只更新 lastUsed，不打 API
       if (!isExpired) {
         this.meta[id].lastUsed = now
-        if (this.cache[id]) {
-          const planStore = usePlanStore()
-          this.cache[id].isInItinerary = planStore.itineraryAttrIds.includes(String(id))
-        }
         return
       }
 
@@ -65,10 +66,6 @@ export const useAttractionStore = defineStore('attraction', {
         const result    = await getAttractionById(id)
         this.cache[id]  = result?.data ?? result
         this.meta[id]   = { fetchedAt: now, lastUsed: now }
-        if (this.cache[id]) {
-          const planStore = usePlanStore()
-          this.cache[id].isInItinerary = planStore.itineraryAttrIds.includes(String(id))
-        }
       } catch (err) {
         this.error = err.message || '無法載入景點資料'
       } finally {
@@ -90,14 +87,12 @@ export const useAttractionStore = defineStore('attraction', {
     },
 
     toggleItinerary() {
-      const item = this.cache[this.currentId]
-      if (!item) return
-      item.isInItinerary = !item.isInItinerary
+      if (!this.currentId) return
       const planStore = usePlanStore()
-      if (item.isInItinerary) {
-        planStore.addItineraryAttrId(this.currentId)
-      } else {
+      if (this.isInItinerary) {
         planStore.removeItineraryAttrId(this.currentId)
+      } else {
+        planStore.addItineraryAttrId(this.currentId)
       }
     },
 

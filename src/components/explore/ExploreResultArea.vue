@@ -79,6 +79,7 @@ const displayCards = computed(() =>
   exploreStore.attractions.map(a => ({
     ...a,
     image:       a.imageUrl || '',
+    title:       a.name || '',
     category:    a.category || '',
     description: a.description || '',
     link:        `/attraction/${a.id}`,

@@ -56,8 +56,12 @@ const hasActiveFilters = computed(() =>
   border-radius: 12px;
   padding: 20px 18px;
   box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+  /* 黏在 fixed navbar（桌面 61px）下方，留 30px 呼吸縫隙；
+     另設 max-height 避免內容過長時把畫面塞滿 */
   position: sticky;
-  top: 100px;
+  top: 91px;
+  max-height: calc(100vh - 91px - 16px);
+  overflow-y: auto;
 }
 .sidebar-title {
   font-size: 0.88rem;

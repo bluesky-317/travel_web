@@ -13,7 +13,7 @@
       <el-table-column prop="name" label="名稱" min-width="140" show-overflow-tooltip />
       <el-table-column prop="location" label="地點" min-width="160" show-overflow-tooltip />
       <el-table-column prop="category" label="分類" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="city" label="城市" width="110" show-overflow-tooltip />
+      <el-table-column prop="city" label="縣市" width="110" show-overflow-tooltip />
       <el-table-column label="操作" width="110" align="center" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link @click="openEdit(row)">

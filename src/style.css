@@ -7,7 +7,15 @@
 html,
 body {
   width: 100%;
-  overflow-x: hidden;
+  /* 不能用 overflow-x: hidden：會把 html/body 變成 scroll container，
+     導致內部 position: sticky 的元素無法黏在視窗頂端。
+     clip 同樣能裁掉水平溢位，但不會建立 scroll container。 */
+  overflow-x: clip;
+}
+
+/* 舊瀏覽器不支援 overflow: clip 時退回 hidden（屆時 sticky 行為仍會被破壞，是可接受的退化） */
+@supports not (overflow: clip) {
+  html, body { overflow-x: hidden; }
 }
 
 #app{

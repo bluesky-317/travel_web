@@ -35,14 +35,27 @@ export function fmtDate(dateStr) {
 }
 
 // ── itineraryAttrIds stays in localStorage (UI state, not itinerary data) ────
-const ITINERARY_IDS_KEY = 'travel_itinerary_attr_ids'
+// 以使用者識別碼分桶，避免跨帳號 / 登出後仍顯示「已加入」
+const ITINERARY_IDS_KEY_PREFIX = 'travel_itinerary_attr_ids:'
+const LEGACY_ITINERARY_IDS_KEY = 'travel_itinerary_attr_ids'
 
-function loadStoredItineraryIds() {
-  try { return JSON.parse(localStorage.getItem(ITINERARY_IDS_KEY) || '[]') } catch { return [] }
+// 舊版未綁定使用者的 key 會跨帳號污染狀態，啟動時一次性清掉
+try { localStorage.removeItem(LEGACY_ITINERARY_IDS_KEY) } catch {}
+
+function keyFor(owner) {
+  return owner == null ? null : `${ITINERARY_IDS_KEY_PREFIX}${owner}`
 }
 
-function persistItineraryIds(ids) {
-  try { localStorage.setItem(ITINERARY_IDS_KEY, JSON.stringify(ids)) } catch {}
+function loadStoredItineraryIds(owner) {
+  const k = keyFor(owner)
+  if (!k) return []
+  try { return JSON.parse(localStorage.getItem(k) || '[]') } catch { return [] }
+}
+
+function persistItineraryIds(owner, ids) {
+  const k = keyFor(owner)
+  if (!k) return
+  try { localStorage.setItem(k, JSON.stringify(ids)) } catch {}
 }
 
 // ── module-level timers (not reactive) ───────────────────────────────────────
@@ -61,7 +74,9 @@ export const usePlanStore = defineStore('plan', {
     attractions: [],
     attractionsLoading: false,
 
-    itineraryAttrIds: loadStoredItineraryIds(),
+    itineraryAttrIds: [],
+    // 目前 itineraryAttrIds 屬於哪個使用者；null = 未登入，不持久化也不接受寫入
+    _attrIdsOwner: null,
 
     // right panel filter
     filterText: '',
@@ -147,20 +162,29 @@ export const usePlanStore = defineStore('plan', {
   actions: {
     // ── itineraryAttrIds (localStorage) ──────────────────────────────────────
 
+    // 由 auth store 在登入 / 登出 / 還原 session 時呼叫
+    syncItineraryAttrIds(owner) {
+      const o = owner == null ? null : String(owner)
+      this._attrIdsOwner = o
+      this.itineraryAttrIds = o ? loadStoredItineraryIds(o) : []
+    },
+
     addItineraryAttrId(id) {
+      if (this._attrIdsOwner == null) return
       const sid = String(id)
       if (!this.itineraryAttrIds.includes(sid)) {
         this.itineraryAttrIds.push(sid)
-        persistItineraryIds(this.itineraryAttrIds)
+        persistItineraryIds(this._attrIdsOwner, this.itineraryAttrIds)
       }
     },
 
     removeItineraryAttrId(id) {
+      if (this._attrIdsOwner == null) return
       const sid = String(id)
       const idx = this.itineraryAttrIds.indexOf(sid)
       if (idx >= 0) {
         this.itineraryAttrIds.splice(idx, 1)
-        persistItineraryIds(this.itineraryAttrIds)
+        persistItineraryIds(this._attrIdsOwner, this.itineraryAttrIds)
       }
     },
 
