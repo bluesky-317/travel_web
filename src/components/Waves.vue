@@ -92,13 +92,5 @@ class="waves"
     height: 40px;
     min-height: 40px;
   }
-
-  .content {
-    height: 30vh;
-  }
-
-  h1 {
-    font-size: 24px;
-  }
 }
 </style>

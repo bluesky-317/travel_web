@@ -33,6 +33,7 @@
           :src="attraction.imageUrl"
           :alt="attraction.name"
           class="image"
+          decoding="async"
         />
         <div v-else class="image-placeholder">
           <i class="fa-solid fa-mountain-sun placeholder-icon"></i>

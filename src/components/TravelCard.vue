@@ -2,7 +2,7 @@
   <!-- ── 水平 List 版型 ── -->
   <div v-if="layout === 'list'" class="card-list-item">
     <div class="list-img-wrap">
-      <img v-if="image" :src="image" :alt="title" class="list-img" />
+      <img v-if="image" :src="image" :alt="title" class="list-img" loading="lazy" decoding="async" />
       <div v-else class="list-img-placeholder">
         <i class="fa-solid fa-image"></i>
       </div>
@@ -32,7 +32,7 @@
 
   <!-- ── 原有卡片版型（首頁輪播用） ── -->
   <div v-else class="card">
-    <img :src="image" :alt="title" class="card-img" />
+    <img :src="image" :alt="title" class="card-img" loading="lazy" decoding="async" />
 
     <div class="card-content">
       <div v-if="category" class="card-category-container">

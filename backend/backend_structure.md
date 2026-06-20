@@ -84,7 +84,7 @@ Startup：
 |---|---|
 | `list` | 動態組 `select(Attraction, Category.name, City.name) + outerjoin`，加 where / order_by / limit / offset；分頁時跑獨立 `COUNT`。 |
 | `get` | outerjoin 撈一筆。 |
-| `create` / `update` | 經 `LookupService` 轉 id → `insert/update`，`source_updated_at=NOW()`，再 `get()` 回讀。 |
+| `create` / `update` | 共用 `_build_attraction_values` 組欄位字典，經 `LookupService` 轉 id → `insert/update`，`source_updated_at=NOW()`，再 `get()` 回讀。 |
 | `delete` | `is_deleted=True` 軟刪除。 |
 
 排序鍵 `sort`：
@@ -100,7 +100,7 @@ Startup：
 
 | 方法 | 功能 |
 |---|---|
-| `list_active` / `list_trash` | 撈使用者行程；active 逐筆 `_load_items_for_itinerary` 撈 items（JOIN Attraction / Category）。 |
+| `list_active` / `list_trash` | 撈使用者行程；共用 `_itinerary_summary` 組回傳 dict，active 帶 `with_items=True` 觸發 `_load_items_for_itinerary`（JOIN Attraction / Category），trash 帶 `False` 不撈 items。 |
 | `create` / `update` | `add` / 動態 `update`。 |
 | `soft_delete` / `restore` / `hard_delete` | 軟刪 / 還原 / 永久刪除。 |
 | `replace_items` | `DELETE` 全清 → `executemany` 批次 `INSERT`。 |

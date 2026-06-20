@@ -23,7 +23,7 @@
       <div class="divider" />
 
       <!-- 各地區 -->
-      <div v-for="region in REGIONS" :key="region.label" class="region-group">
+      <div v-for="region in CITY_REGIONS" :key="region.label" class="region-group">
         <div class="group-header">
           <i
             :class="['fa-solid', expanded.has(region.label) ? 'fa-chevron-down' : 'fa-chevron-right', 'expand-icon']"
@@ -51,24 +51,17 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { CITY_REGIONS, CITIES } from '@/constants/cities'
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['update:modelValue'])
 
-const REGIONS = [
-  { label: '北部地區', cities: ['台北市', '新北市', '基隆市', '桃園市', '宜蘭縣', '新竹市', '新竹縣'] },
-  { label: '中部地區', cities: ['台中市', '苗栗縣', '彰化縣', '南投縣', '雲林縣'] },
-  { label: '南部地區', cities: ['台南市', '高雄市', '嘉義市', '嘉義縣', '屏東縣'] },
-  { label: '東部與外島', cities: ['花蓮縣', '台東縣', '澎湖縣', '金門縣', '連江縣'] },
-]
-const ALL_CITIES = REGIONS.flatMap(r => r.cities)
-
 // 預設展開第一個地區
 const expanded = ref(new Set(['北部地區']))
 
-const isAllSelected = computed(() => ALL_CITIES.every(c => props.modelValue.includes(c)))
+const isAllSelected = computed(() => CITIES.every(c => props.modelValue.includes(c)))
 const isIndeterminate = computed(() => !isAllSelected.value && props.modelValue.length > 0)
 
 function isGroupAllChecked(region) {
@@ -80,7 +73,7 @@ function isGroupIndeterminate(region) {
 }
 
 function toggleAll(v) {
-  emit('update:modelValue', v ? [...ALL_CITIES] : [])
+  emit('update:modelValue', v ? [...CITIES] : [])
 }
 function toggleGroup(region, v) {
   const current = new Set(props.modelValue)

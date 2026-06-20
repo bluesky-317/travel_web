@@ -165,7 +165,7 @@
 
               <!-- AI 排程額外資訊 -->
               <div v-if="item.imageUrl || item.openingHours || item.ticketInfo || item.category" class="tl-extra">
-                <img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.name" class="tl-thumb" />
+                <img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.name" class="tl-thumb" loading="lazy" decoding="async" />
                 <div class="tl-meta">
                   <span v-if="item.location" class="tl-meta-row">
                     <i class="fa-solid fa-location-dot"></i> {{ item.location }}

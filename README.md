@@ -30,7 +30,7 @@
     在 `專案根目錄`、`backend` 資料夾底下的 `.env` 可調整。
 
 
-### 如何啟動
+## 如何啟動
 要讓網頁運行必須要將 `vite`、`mariaDB Server`、`python api server` 啟動。
 
 依序執行下面指令

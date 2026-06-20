@@ -60,7 +60,6 @@ export const useAuthStore = defineStore('auth', {
         ElMessage.success('登入成功！');
         return true;
       } catch (error) {
-        console.error('Login failed:', error);
         return false;
       }
     },
@@ -130,7 +129,6 @@ export const useAuthStore = defineStore('auth', {
 
         return true;
       } catch (error) {
-        console.error('Registration failed:', error.message);
         return false;
       }
     }

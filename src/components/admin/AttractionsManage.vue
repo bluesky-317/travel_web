@@ -50,28 +50,7 @@
           <el-col :span="12">
             <el-form-item label="縣市" prop="city">
               <el-select v-model="form.city" placeholder="請選擇縣市" style="width:100%">
-                <el-option label="基隆市" value="基隆市" />
-                <el-option label="台北市" value="台北市" />
-                <el-option label="新北市" value="新北市" />
-                <el-option label="桃園市" value="桃園市" />
-                <el-option label="新竹市" value="新竹市" />
-                <el-option label="新竹縣" value="新竹縣" />
-                <el-option label="苗栗縣" value="苗栗縣" />
-                <el-option label="台中市" value="台中市" />
-                <el-option label="彰化縣" value="彰化縣" />
-                <el-option label="南投縣" value="南投縣" />
-                <el-option label="雲林縣" value="雲林縣" />
-                <el-option label="嘉義市" value="嘉義市" />
-                <el-option label="嘉義縣" value="嘉義縣" />
-                <el-option label="台南市" value="台南市" />
-                <el-option label="高雄市" value="高雄市" />
-                <el-option label="屏東縣" value="屏東縣" />
-                <el-option label="宜蘭縣" value="宜蘭縣" />
-                <el-option label="花蓮縣" value="花蓮縣" />
-                <el-option label="台東縣" value="台東縣" />
-                <el-option label="澎湖縣" value="澎湖縣" />
-                <el-option label="金門縣" value="金門縣" />
-                <el-option label="連江縣" value="連江縣" />
+                <el-option v-for="c in CITIES" :key="c" :label="c" :value="c" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -86,10 +65,7 @@
           <el-col :span="12">
             <el-form-item label="分類">
               <el-select v-model="form.category" placeholder="請選擇分類" clearable style="width:100%">
-            <el-option label="自然景觀" value="自然景觀" />
-            <el-option label="生態觀察與動植物" value="生態觀察與動植物" />
-            <el-option label="林業歷史與人文" value="林業歷史與人文" />
-            <el-option label="戶外體驗" value="戶外體驗" />
+                <el-option v-for="cat in CATEGORIES" :key="cat" :label="cat" :value="cat" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -185,6 +161,8 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { searchAttractions } from '@/api/Attraction'
 import { createAttraction, updateAttraction, deleteAttraction } from '@/api/admin'
+import { CITIES } from '@/constants/cities'
+import { CATEGORIES } from '@/constants/categories'
 
 const attractions = ref([])
 const loading = ref(false)

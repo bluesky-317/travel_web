@@ -34,24 +34,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { searchAttractions } from '@/api/Attraction'
+import { CITIES, extractCity } from '@/constants/cities'
 
 const BAR_MAX_HEIGHT = 220
-
-const CITIES_ORDER = [
-  '基隆市', '台北市', '新北市', '桃園市', '新竹市', '新竹縣',
-  '苗栗縣', '台中市', '彰化縣', '南投縣', '雲林縣', '嘉義市',
-  '嘉義縣', '台南市', '高雄市', '屏東縣', '宜蘭縣', '花蓮縣',
-  '台東縣', '澎湖縣', '金門縣', '連江縣',
-]
-
-function extractCity(location) {
-  if (!location) return '其他'
-  const normalized = location.replace(/臺/g, '台')
-  for (const city of CITIES_ORDER) {
-    if (normalized.startsWith(city)) return city
-  }
-  return '其他'
-}
 
 const loading = ref(false)
 const rawData = ref([])
@@ -65,8 +50,8 @@ const chartData = computed(() => {
   return Object.entries(counts)
     .map(([city, count]) => ({ city, count }))
     .sort((a, b) => {
-      const ia = CITIES_ORDER.indexOf(a.city)
-      const ib = CITIES_ORDER.indexOf(b.city)
+      const ia = CITIES.indexOf(a.city)
+      const ib = CITIES.indexOf(b.city)
       if (ia === -1 && ib === -1) return 0
       if (ia === -1) return 1
       if (ib === -1) return -1

@@ -24,10 +24,7 @@
           @change="store.resetAndSearch"
           @clear="store.resetAndSearch"
         >
-          <el-option label="自然景觀"        value="自然景觀" />
-          <el-option label="生態觀察與動植物" value="生態觀察與動植物" />
-          <el-option label="林業歷史與人文"  value="林業歷史與人文" />
-          <el-option label="戶外體驗"        value="戶外體驗" />
+          <el-option v-for="cat in CATEGORIES" :key="cat" :label="cat" :value="cat" />
         </el-select>
       </div>
 
@@ -49,7 +46,7 @@
           :page-size="store.searchPageSize"
           :total="store.searchTotal"
           layout="prev, pager, next"
-          small
+          size="small"
           background
           @current-change="store.setSearchPage"
         />
@@ -76,6 +73,7 @@
 import { watch } from 'vue'
 import { usePlanStore } from '@/stores/plan'
 import AttractionCard from './AttractionCard.vue'
+import { CATEGORIES } from '@/constants/categories'
 
 const store = usePlanStore()
 const TABS = [

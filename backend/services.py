@@ -338,37 +338,39 @@ class AttractionService:
                 raise HTTPException(status_code=404, detail="景點不存在")
             return self._row_to_api(row[0], row[1], row[2])
 
-    def create(self, body: AttractionBody) -> dict:
-        new_id = str(uuid.uuid4())
+    def _build_attraction_values(self, session: Session, body: AttractionBody) -> dict:
         city_name = norm_city(body.city)
         if not city_name:
             city_name, _ = split_location(body.location)
+        return {
+            "name": body.name,
+            "category_id": self.lookups.category_id(session, body.category),
+            "city_id": self.lookups.city_id(session, city_name),
+            "address": body.location,
+            "lat": body.lat,
+            "lon": body.lon,
+            "image_url": body.imageUrl,
+            "description": body.description,
+            "opening_hours": json_text(body.openingHours),
+            "ticket_info": json_text(body.ticketInfo),
+            "website_url": body.website,
+            "rating": body.rating,
+            "phone": body.phone,
+            "source_updated_at": func.now(),
+        }
+
+    def create(self, body: AttractionBody) -> dict:
+        new_id = str(uuid.uuid4())
         with db.session_scope() as session:
             session.execute(
                 insert(Attraction).values(
                     attraction_id=new_id,
-                    name=body.name,
-                    category_id=self.lookups.category_id(session, body.category),
-                    city_id=self.lookups.city_id(session, city_name),
-                    address=body.location,
-                    lat=body.lat,
-                    lon=body.lon,
-                    image_url=body.imageUrl,
-                    description=body.description,
-                    opening_hours=json_text(body.openingHours),
-                    ticket_info=json_text(body.ticketInfo),
-                    website_url=body.website,
-                    rating=body.rating,
-                    phone=body.phone,
-                    source_updated_at=func.now(),
+                    **self._build_attraction_values(session, body),
                 )
             )
         return self.get(new_id)
 
     def update(self, attraction_id: str, body: AttractionBody) -> dict:
-        city_name = norm_city(body.city)
-        if not city_name:
-            city_name, _ = split_location(body.location)
         with db.session_scope() as session:
             exists = session.execute(
                 select(Attraction.attraction_id).where(
@@ -381,22 +383,7 @@ class AttractionService:
             session.execute(
                 update(Attraction)
                 .where(Attraction.attraction_id == attraction_id)
-                .values(
-                    name=body.name,
-                    category_id=self.lookups.category_id(session, body.category),
-                    city_id=self.lookups.city_id(session, city_name),
-                    address=body.location,
-                    lat=body.lat,
-                    lon=body.lon,
-                    image_url=body.imageUrl,
-                    description=body.description,
-                    opening_hours=json_text(body.openingHours),
-                    ticket_info=json_text(body.ticketInfo),
-                    website_url=body.website,
-                    rating=body.rating,
-                    phone=body.phone,
-                    source_updated_at=func.now(),
-                )
+                .values(**self._build_attraction_values(session, body))
             )
         return self.get(attraction_id)
 
@@ -470,6 +457,16 @@ class ItineraryService:
         if not owned:
             raise HTTPException(status_code=404, detail="行程不存在")
 
+    def _itinerary_summary(self, session: Session, itin: Itinerary, *, with_items: bool) -> dict:
+        return {
+            "id": itin.itinerary_id,
+            "title": itin.title,
+            "startDate": itin.start_date.isoformat() if itin.start_date else date.today().isoformat(),
+            "numDays": itin.num_days,
+            "isDeleted": bool(itin.is_deleted),
+            "days": self._load_items_for_itinerary(session, itin.itinerary_id, itin.num_days) if with_items else [],
+        }
+
     def list_active(self, user_id: str) -> list[dict]:
         with db.session_scope() as session:
             itineraries = session.execute(
@@ -480,18 +477,7 @@ class ItineraryService:
                 )
                 .order_by(desc(Itinerary.created_at))
             ).scalars().all()
-            result = []
-            for itin in itineraries:
-                sd = itin.start_date.isoformat() if itin.start_date else date.today().isoformat()
-                result.append({
-                    "id": itin.itinerary_id,
-                    "title": itin.title,
-                    "startDate": sd,
-                    "numDays": itin.num_days,
-                    "isDeleted": False,
-                    "days": self._load_items_for_itinerary(session, itin.itinerary_id, itin.num_days),
-                })
-            return result
+            return [self._itinerary_summary(session, itin, with_items=True) for itin in itineraries]
 
     def list_trash(self, user_id: str) -> list[dict]:
         with db.session_scope() as session:
@@ -503,14 +489,7 @@ class ItineraryService:
                 )
                 .order_by(desc(Itinerary.updated_at))
             ).scalars().all()
-        return [{
-            "id": itin.itinerary_id,
-            "title": itin.title,
-            "startDate": itin.start_date.isoformat() if itin.start_date else date.today().isoformat(),
-            "numDays": itin.num_days,
-            "isDeleted": True,
-            "days": [],
-        } for itin in rows]
+            return [self._itinerary_summary(session, itin, with_items=False) for itin in rows]
 
     def create(self, body: CreateItineraryBody, user_id: str) -> dict:
         itin_id = str(uuid.uuid4())

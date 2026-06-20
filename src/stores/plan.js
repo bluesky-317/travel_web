@@ -69,8 +69,6 @@ export const usePlanStore = defineStore('plan', {
     activeId: null,
     activeDay: 0,
 
-    isLoading: false,
-
     attractions: [],
     attractionsLoading: false,
 
@@ -482,7 +480,6 @@ export const usePlanStore = defineStore('plan', {
     async init() {
       await this.fetchAttractions()
       // load itineraries from DB (requires auth; request.js will reject if 401)
-      this.isLoading = true
       this.trashLoaded = false
       try {
         const activeRes = await listItineraries()
@@ -494,8 +491,6 @@ export const usePlanStore = defineStore('plan', {
         // 未登入或網路錯誤：保持空行程列表
         this.itineraries = []
         this.activeId    = null
-      } finally {
-        this.isLoading = false
       }
     },
 
